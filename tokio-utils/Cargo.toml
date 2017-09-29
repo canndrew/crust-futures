@@ -1,0 +1,11 @@
+[package]
+name = "tokio-utils"
+version = "0.1.0"
+authors = ["Andrew Cann <shum@canndrew.org>"]
+
+[dependencies]
+tokio-core = "*"
+maidsafe_utilities = "*"
+unwrap = "1.1"
+serde = "*"
+

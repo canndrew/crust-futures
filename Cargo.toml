@@ -1,0 +1,10 @@
+[workspace]
+members = [
+    "tokio-utils",
+    "crust",
+    "service_discovery",
+    "net-macros",
+    "net-macros-impl",
+    "tokio-igd"
+]
+

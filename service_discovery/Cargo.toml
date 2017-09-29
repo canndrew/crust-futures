@@ -1,0 +1,19 @@
+[package]
+name = "service_discovery"
+version = "0.1.0"
+authors = ["Andrew Cann <shum@canndrew.org>"]
+
+[dependencies]
+serde = "1.0.10"
+serde_derive = "1.0.10"
+tokio-core = "*"
+futures = "*"
+unwrap = "1.1"
+rand = "0.3.15"
+maidsafe_utilities = "0.14"
+void = "*"
+log = "*"
+
+tokio-utils = { path = "../tokio-utils" }
+future-utils = { path = "../future-utils" }
+

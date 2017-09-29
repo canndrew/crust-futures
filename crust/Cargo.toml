@@ -1,0 +1,26 @@
+[package]
+name = "crust-futures"
+version = "0.1.0"
+authors = ["Andrew Cann <shum@canndrew.org>"]
+
+[dependencies]
+serde = "1.0.10"
+serde_derive = "1.0.10"
+serde_json = "1.0.2"
+maidsafe_utilities = "0.14.0"
+config_file_handler = "0.8.0"
+quick-error = "1.2.0"
+unwrap = "1.1"
+tokio-core = "*"
+tokio-io = "*"
+futures = "*"
+net2 = "*"
+get_if_addrs = "*"
+log = "*"
+void = "*"
+bytes = "*"
+
+future-utils = { path = "../future-utils" }
+net-macros = { path = "../net-macros" }
+tokio-igd = { path = "../tokio-igd" }
+

@@ -1,0 +1,10 @@
+[package]
+name = "tokio-igd"
+version = "0.1.0"
+authors = ["Andrew Cann <shum@canndrew.org>"]
+
+[dependencies]
+igd = "*"
+futures = "*"
+unwrap = "1.1"
+
