@@ -19,8 +19,12 @@ get_if_addrs = "*"
 log = "*"
 void = "*"
 bytes = "*"
+rand = "*"
+env_logger = "*"
+tiny-keccak = "1.3"
 
 future-utils = { path = "../future-utils" }
 net-macros = { path = "../net-macros" }
 tokio-igd = { path = "../tokio-igd" }
+service_discovery = { path = "../service_discovery" }
 

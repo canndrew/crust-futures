@@ -1,5 +1,6 @@
 use std::io;
 use config_file_handler;
+use nat::NatError;
 
 quick_error! {
     /// Crust's universal error type.
@@ -17,6 +18,14 @@ quick_error! {
             description("IO error")
             display("IO error: {}", e)
             cause(e)
+            from()
+        }
+        BootstrapFailed {
+            description("Bootstrap failed")
+        }
+        NatError(e: NatError) {
+            description("Error from NAT library")
+            display("Error from NAT library: {}", e)
             from()
         }
     }

@@ -21,6 +21,10 @@ extern crate tokio_igd;
 extern crate log;
 extern crate void;
 extern crate bytes;
+extern crate service_discovery;
+extern crate rand;
+extern crate env_logger;
+extern crate tiny_keccak;
 
 mod uid;
 mod config;
@@ -28,6 +32,12 @@ mod error;
 mod nat;
 mod common;
 pub mod compat;
+mod service;
+mod util;
+mod bootstrap;
+mod listener;
+mod peer;
 
-pub use config::{read_config_file, Config};
+//pub use config::{Config};
+pub use service::Service;
 

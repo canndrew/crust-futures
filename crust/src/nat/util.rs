@@ -63,3 +63,4 @@ pub fn ipv6_addr_is_global(ipv6: &Ipv6Addr) -> bool {
     // TODO(canndrew): This function is incomplete and may return false-positives.
     !(ipv6.is_loopback() || ipv6.is_unspecified())
 }
+

@@ -1,5 +1,5 @@
 use uid::Uid;
-use config::{self, Config};
+use config::{self, ConfigFile};
 use error::CrustError;
 use compat::CrustEventSender;
 
@@ -8,10 +8,11 @@ pub struct Service<UID: Uid> {
 }
 
 impl<UID: Uid> Service<UID> {
+    /*
     /// Construct a service. `event_tx` is the sending half of the channel which crust will send
     /// notifications on.
     pub fn new(event_tx: CrustEventSender<UID>, our_uid: UID) -> Result<Service<UID>, CrustError> {
-        Service::with_config(event_tx, config::read_config_file()?, our_uid)
+        Service::with_config(event_tx, ConfigFile::open_default()?, our_uid)
     }
 
     /// Constructs a service with the given config. User needs to create an asynchronous channel,
@@ -19,12 +20,20 @@ impl<UID: Uid> Service<UID> {
     /// library.
     pub fn with_config(
         event_tx: CrustEventSender<UID>,
-        config: Config,
+        config: ConfigFile,
         our_uid: UID,
     ) -> Result<Service<UID>, CrustError> {
         Ok(Service {
             event_tx: event_tx,
         })
     }
+
+    pub fn start_service_discovery(&mut self) {
+    }
+
+    pub fn set_service_discovery_listen(&self, listen: bool) {
+
+    }
+    */
 }
 

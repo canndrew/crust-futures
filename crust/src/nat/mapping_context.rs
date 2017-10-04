@@ -22,24 +22,41 @@ use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
 use get_if_addrs::{self, IfAddr};
 use tokio_igd::{self, Gateway};
-use futures::{future, stream, Future, Stream, BoxFuture};
+use futures::{future, stream, Future, Stream};
+use future_utils::{BoxFuture, FutureExt};
 
 use nat::{self, NatError};
 
 /// Keeps track of information about external mapping servers
 #[derive(Debug)]
 pub struct MappingContext {
-    our_ifv4s: Vec<(Ipv4Addr, Option<Gateway>)>,
+    our_ifv4s: Vec<Ifv4>,
     our_ifv6s: Vec<Ipv6Addr>,
     peer_stuns: Vec<SocketAddr>,
 }
 
+#[derive(Debug, Default)]
+pub struct Options {
+    pub force_include_port: bool,
+}
+
+#[derive(Debug)]
+pub struct Ifv4 {
+    ip: Ipv4Addr,
+    gateway: Option<Gateway>,
+    force_include_port: bool,
+}
+
 impl MappingContext {
     /// Create a new `MappingContext`
-    pub fn new() -> BoxFuture<MappingContext, NatError> {
+    pub fn new(options: Options) -> BoxFuture<MappingContext, NatError> {
+        let Options {
+            force_include_port,
+        } = options;
+
         let ifs = match get_if_addrs::get_if_addrs() {
             Ok(ifs) => ifs,
-            Err(e) => return future::err(NatError::from(e)).boxed(),
+            Err(e) => return future::err(NatError::from(e)).into_boxed(),
         };
         let (mut ifv4s, mut ifv6s) = (Vec::with_capacity(5), Vec::with_capacity(5));
         for interface in ifs {
@@ -55,11 +72,18 @@ impl MappingContext {
                 let future = tokio_igd::search_gateway_from_timeout(ifv4, Duration::from_secs(1))
                     .then(move |res| {
                         match res {
-                            Ok(gateway) => future::ok((ifv4, Some(gateway))),
+                            Ok(gateway) => future::ok(Some(gateway)),
                             Err(e) => {
                                 info!("Error searching for IGD gateway: {}", e);
-                                future::ok((ifv4, None))
+                                future::ok(None)
                             },
+                        }
+                    })
+                    .map(move |gateway_opt| {
+                        Ifv4 {
+                            ip: ifv4,
+                            gateway: gateway_opt,
+                            force_include_port: force_include_port,
                         }
                     });
                 igd_futures.push(future);
@@ -74,7 +98,7 @@ impl MappingContext {
                     peer_stuns: Vec::with_capacity(10),
                 })
             })
-            .boxed()
+            .into_boxed()
     }
 
     /// Inform the context about external "STUN" servers. Note that crust does not actually use
@@ -87,13 +111,23 @@ impl MappingContext {
     }
 
     /// Get v4 interfaces
-    pub fn ifv4s(&self) -> &Vec<(Ipv4Addr, Option<Gateway>)> {
+    pub fn ifv4s(&self) -> &[Ifv4] {
         &self.our_ifv4s
     }
 
     /// Iterate over the known servers
     pub fn peer_stuns(&self) -> &Vec<SocketAddr> {
         &self.peer_stuns
+    }
+}
+
+impl Ifv4 {
+    pub fn ip(&self) -> Ipv4Addr {
+        self.ip
+    }
+
+    pub fn gateway(&self) -> Option<&Gateway> {
+        self.gateway.as_ref()
     }
 }
 

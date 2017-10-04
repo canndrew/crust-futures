@@ -15,30 +15,35 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use common::{self, ExternalReachability, NameHash};
+use config_file_handler::{self, FileHandler};
+use std::ffi::OsString;
+use std::net::SocketAddr;
+use std::path::{Path, PathBuf};
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub enum PeerMessage {
-    Heartbeat,
-    Data(Vec<u8>),
+pub struct Cache {
+    file_handler: FileHandler<Vec<SocketAddr>>,
 }
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub enum SocketMessage<UID> {
-    BootstrapRequest(UID, NameHash, ExternalReachability),
-    BootstrapGranted(UID),
-    BootstrapDenied(BootstrapDenyReason),
-    EchoAddrReq,
-    EchoAddrResp(common::SocketAddr),
-    ChooseConnection,
-    Connect(UID, NameHash),
-}
+impl Cache {
+    pub fn new(name: Option<&Path>) -> Result<Self, config_file_handler::Error> {
+        Ok(Cache {
+            file_handler: FileHandler::new(
+                name.unwrap_or(&Self::default_file_name()?),
+                true,
+            )?, // last_updated: Instant::now(),
+        })
+    }
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
-pub enum BootstrapDenyReason {
-    InvalidNameHash,
-    FailedExternalReachability,
-    NodeNotWhitelisted,
-    ClientNotWhitelisted,
+    pub fn default_file_name() -> Result<PathBuf, config_file_handler::Error> {
+        let mut name = config_file_handler::exe_file_stem()?;
+        name.push(".bootstrap.cache");
+        Ok(PathBuf::from(name))
+    }
+
+    pub fn read_file(&mut self) -> Vec<SocketAddr> {
+        self.file_handler.read_file().ok().unwrap_or_else(|| vec![])
+    }
+
+    pub fn remove_peer_acceptor(&mut self, _peer: SocketAddr) {}
 }
 

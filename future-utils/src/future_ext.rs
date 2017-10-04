@@ -1,7 +1,10 @@
 use futures::Future;
 use until::Until;
+use infallible::Infallible;
 
 use BoxFuture;
+
+use void::Void;
 
 pub trait FutureExt: Future + Sized {
     fn into_boxed(self) -> BoxFuture<Self::Item, Self::Error>
@@ -17,6 +20,13 @@ pub trait FutureExt: Future + Sized {
         Self::Error: From<C::Error>
     {
         Until::new(self, condition)
+    }
+
+    fn infallible<E>(self) -> Infallible<Self, E>
+    where
+        Self: Future<Error=Void>
+    {
+        Infallible::new(self)
     }
 }
 

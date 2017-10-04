@@ -1,6 +1,6 @@
 mod mapped_tcp_socket;
 mod util;
-mod mapping_context;
+pub mod mapping_context;
 mod error;
 //mod get_ext_addr;
 

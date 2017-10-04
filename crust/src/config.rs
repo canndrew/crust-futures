@@ -1,4 +1,4 @@
-// Copyright 2016 MaidSafe.net limited.
+// Copyright 2017 MaidSafe.net limited.
 //
 // This SAFE Network Software is licensed to you under (1) the MaidSafe.net Commercial License,
 // version 1.0 or later, or (2) The General Public License (GPL), version 3, depending on which
@@ -17,17 +17,150 @@
 
 use config_file_handler::{self, FileHandler};
 use std::collections::HashSet;
-use std::ffi::OsString;
 use std::net::{IpAddr, SocketAddr};
+use std::ops::{Deref, DerefMut};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tiny_keccak::sha3_256;
 
 use error::CrustError;
+use common::{NameHash, HASH_SIZE};
 
-#[cfg(test)]
-use std::path::PathBuf;
+/// A handle to a crust config file. This handle can be cloned and shared throughout the program.
+#[derive(Clone)]
+pub struct ConfigFile {
+    inner: Arc<RwLock<ConfigWrapper>>,
+}
+
+impl ConfigFile {
+    /// Open a crust config file with the give file name.
+    pub fn open_path(file_name: PathBuf) -> Result<ConfigFile, CrustError> {
+        let config_wrapper = ConfigWrapper::open(file_name)?;
+        Ok(ConfigFile { inner: Arc::new(RwLock::new(config_wrapper)) })
+    }
+
+    /// Open a crust config file with the default file name.
+    pub fn open_default() -> Result<ConfigFile, CrustError> {
+        let mut name = config_file_handler::exe_file_stem()?;
+        name.push(".crust.config");
+        let config_wrapper = ConfigWrapper::open(name.into())?;
+        Ok(ConfigFile { inner: Arc::new(RwLock::new(config_wrapper)) })
+    }
+
+    /// Lock the config for reading.
+    pub fn read(&self) -> ConfigReadGuard {
+        ConfigReadGuard { guard: unwrap!(self.inner.read()) }
+    }
+
+    /// Lock the config for writing. Any changes made to the config will be synced to disc when the
+    /// returned guard is dropped.
+    pub fn write(&self) -> Result<ConfigWriteGuard, CrustError> {
+        let guard = unwrap!(self.inner.write());
+        let file_handler = FileHandler::new(&guard.file_name, false)?;
+        Ok(ConfigWriteGuard {
+            file_handler: file_handler,
+            guard: guard,
+        })
+    }
+
+    /// Reload the config file from disc.
+    pub fn reload(&self) -> Result<(), CrustError> {
+        let mut current_config = unwrap!(self.inner.write());
+        let file_handler = FileHandler::new(&current_config.file_name, false)?;
+        let new_config = file_handler.read_file()?;
+        let modified = current_config.cfg != new_config;
+        if modified {
+            current_config.cfg = new_config;
+        }
+        Ok(())
+    }
+
+    /// Get the full path to the file.
+    pub fn get_file_path(&self) -> Result<PathBuf, CrustError> {
+        let config_wrapper = unwrap!(self.inner.read());
+        let file_handler = FileHandler::<ConfigSettings>::new(&config_wrapper.file_name, false)?;
+        Ok(file_handler.path().to_owned())
+    }
+
+    /// Get the name hash of the network we're configured to connect to.
+    pub fn network_name_hash(&self) -> NameHash {
+        match self.read().network_name {
+            Some(ref name) => sha3_256(name.as_bytes()),
+            None => [0; HASH_SIZE],
+        }
+    }
+}
+
+/// Returned by `ConfigFile::read`. Locks the config for reading and be used to access the config
+/// settings.
+pub struct ConfigReadGuard<'c> {
+    guard: RwLockReadGuard<'c, ConfigWrapper>,
+}
+
+impl<'c> Deref for ConfigReadGuard<'c> {
+    type Target = ConfigSettings;
+
+    fn deref(&self) -> &ConfigSettings {
+        &self.guard.cfg
+    }
+}
+
+/// Returned by `ConfigFile::write`. Locks the config for reading/writing and be used to mutate the
+/// config settings. Any changes made to the settings will be synced to disc when then guard is
+/// dropped.
+pub struct ConfigWriteGuard<'c> {
+    file_handler: FileHandler<ConfigSettings>,
+    guard: RwLockWriteGuard<'c, ConfigWrapper>,
+}
+
+impl<'c> Deref for ConfigWriteGuard<'c> {
+    type Target = ConfigSettings;
+
+    fn deref(&self) -> &ConfigSettings {
+        &self.guard.cfg
+    }
+}
+
+impl<'c> DerefMut for ConfigWriteGuard<'c> {
+    fn deref_mut(&mut self) -> &mut ConfigSettings {
+        &mut self.guard.cfg
+    }
+}
+
+impl<'c> Drop for ConfigWriteGuard<'c> {
+    fn drop(&mut self) {
+        match self.file_handler.write_file(&self.guard.cfg) {
+            Ok(()) => (),
+            Err(e) => {
+                error!(
+                    "Unable to write config file {:?}: {}",
+                    self.guard.file_name,
+                    e
+                );
+            }
+        };
+    }
+}
+
+#[derive(Default)]
+struct ConfigWrapper {
+    cfg: ConfigSettings,
+    file_name: PathBuf,
+}
+
+impl ConfigWrapper {
+    pub fn open(file_name: PathBuf) -> Result<ConfigWrapper, CrustError> {
+        let config = ConfigSettings::open(&file_name)?;
+        Ok(ConfigWrapper {
+            cfg: config,
+            file_name: file_name,
+        })
+    }
+}
 
 /// Crust configuration settings
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
-pub struct Config {
+pub struct ConfigSettings {
     /// Direct contacts one should connect to
     pub hard_coded_contacts: Vec<SocketAddr>,
     /// Port for TCP acceptor
@@ -46,7 +179,7 @@ pub struct Config {
     /// Port for service discovery on local network
     pub service_discovery_port: Option<u16>,
     /// File for bootstrap cache
-    pub bootstrap_cache_name: Option<String>,
+    pub bootstrap_cache_name: Option<PathBuf>,
     /// Whitelisted nodes who are allowed to bootstrap off us or to connect to us
     pub whitelisted_node_ips: Option<HashSet<IpAddr>>,
     /// Whitelisted clients who are allowed to bootstrap off us
@@ -57,19 +190,19 @@ pub struct Config {
     /// networks to connect to each other (issue #209)
     pub network_name: Option<String>,
     /// Optional developer configuration
-    pub dev: Option<DevConfig>,
+    pub dev: Option<DevConfigSettings>,
 }
 
 /// Developer options
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone, Default)]
-pub struct DevConfig {
+pub struct DevConfigSettings {
     /// If `true`, then the mandatory external reachability test is disabled.
     pub disable_external_reachability_requirement: bool,
 }
 
-impl Default for Config {
-    fn default() -> Config {
-        Config {
+impl Default for ConfigSettings {
+    fn default() -> ConfigSettings {
+        ConfigSettings {
             hard_coded_contacts: vec![],
             tcp_acceptor_port: None,
             force_acceptor_port_in_ext_ep: false,
@@ -83,77 +216,34 @@ impl Default for Config {
     }
 }
 
-/// Reads the default crust config file.
-pub fn read_config_file() -> Result<Config, CrustError> {
-    let file_handler = FileHandler::new(&get_file_name()?, false)?;
-    let cfg = file_handler.read_file()?;
-    Ok(cfg)
-}
-
-/// Writes a Crust config file **for use by tests and examples**.
-///
-/// The file is written to the [`current_bin_dir()`](file_handler/fn.current_bin_dir.html)
-/// with the appropriate file name.
-///
-/// N.B. This method should only be used as a utility for test and examples.  In normal use cases,
-/// this file should be created by the installer for the dependent application.
-#[cfg(test)]
-#[allow(dead_code)]
-pub fn write_config_file(hard_coded_contacts: Option<Vec<SocketAddr>>) -> Result<PathBuf, CrustError> {
-    use std::io::Write;
-    use serde_json;
-
-    let mut config = Config::default();
-
-    if let Some(contacts) = hard_coded_contacts {
-        config.hard_coded_contacts = contacts;
+impl ConfigSettings {
+    /// Open the given file name and read settings.
+    pub fn open(file_name: &Path) -> Result<ConfigSettings, CrustError> {
+        let file_handler = FileHandler::new(file_name, false)?;
+        let cfg = file_handler.read_file()?;
+        Ok(cfg)
     }
-
-    let mut config_path = config_file_handler::current_bin_dir()?;
-    config_path.push(get_file_name()?);
-    let mut file = ::std::fs::File::create(&config_path)?;
-    write!(
-        &mut file,
-        "{}",
-        unwrap!(serde_json::to_string_pretty(&config))
-    )?;
-    file.sync_all()?;
-    Ok(config_path)
-}
-
-fn get_file_name() -> Result<OsString, CrustError> {
-    let mut name = config_file_handler::exe_file_stem()?;
-    name.push(".crust.config");
-    Ok(name)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::Config;
-    use serde_json;
-    use std::io::Read;
-    use std::path::Path;
+    use super::ConfigFile;
+    use config_file_handler;
+    use std::fs;
+    use std::path::PathBuf;
 
     #[test]
     fn parse_sample_config_file() {
-        let path = Path::new("installer/sample.config").to_path_buf();
+        let sample_name = "sample.config";
 
-        let mut file = match ::std::fs::File::open(path) {
-            Ok(file) => file,
-            Err(what) => {
-                panic!(format!("CrustError opening sample.config: {:?}", what));
-            }
-        };
+        let mut source = PathBuf::from("installer");
+        source.push(sample_name);
+        let mut target = unwrap!(config_file_handler::current_bin_dir());
+        target.push(sample_name);
 
-        let mut encoded_contents = String::new();
+        let _ = unwrap!(fs::copy(source, target));
 
-        if let Err(what) = file.read_to_string(&mut encoded_contents) {
-            panic!(format!("CrustError reading sample.config: {:?}", what));
-        }
-
-        if let Err(what) = serde_json::from_str::<Config>(&encoded_contents) {
-            panic!(format!("CrustError parsing sample.config: {:?}", what));
-        }
+        let path = PathBuf::from(sample_name);
+        let _ = unwrap!(ConfigFile::open_path(path));
     }
 }
-

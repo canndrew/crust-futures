@@ -11,7 +11,7 @@ use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
 use bytes::BytesMut;
 use maidsafe_utilities::serialisation::{serialise_into, deserialise, SerialisationError};
 
-use common::{MAX_PAYLOAD_SIZE, Message};
+use common::{MAX_PAYLOAD_SIZE, SocketMessage};
 use uid::Uid;
 
 pub type Priority = u8;
@@ -22,7 +22,7 @@ pub const MSG_DROP_PRIORITY: u8 = 2;
 const MAX_MSG_AGE_SECS: u64 = 60;
 
 quick_error! {
-    /// Errors raised by sockets
+    /// Errors that can occur on sockets.
     #[derive(Debug)]
     pub enum SocketError {
         Destroyed {
@@ -35,8 +35,8 @@ quick_error! {
             from()
         }
         Deserialisation(e: SerialisationError) {
-            description("Error deserialising message from peer")
-            display("Error deserialising message from peer")
+            description("Error deserialising message from socket")
+            display("Error deserialising message from socket")
             cause(e)
             from()
         }
@@ -88,39 +88,45 @@ impl<UID: Uid> Socket<UID> {
 }
 
 impl<UID: Uid> Stream for Socket<UID> {
-    type Item = Message<UID>;
+    type Item = SocketMessage<UID>;
     type Error = SocketError;
 
-    fn poll(&mut self) -> Result<Async<Option<Message<UID>>>, SocketError> {
-        let inner = match self.inner {
-            Some(ref mut inner) => inner,
+    fn poll(&mut self) -> Result<Async<Option<SocketMessage<UID>>>, SocketError> {
+        let mut inner = match self.inner.take() {
+            Some(inner) => inner,
             None => return Err(SocketError::Destroyed),
         };
-        if let Async::Ready(data_opt) = inner.stream_rx.poll()? {
-            let data = unwrap!(data_opt);
+        let ret = if let Async::Ready(data_opt) = inner.stream_rx.poll()? {
+            let data = match data_opt {
+                Some(data) => data,
+                None => return Err(SocketError::Destroyed),
+            };
             let msg = deserialise(&data[..])?;
             Ok(Async::Ready(Some(msg)))
         } else {
             Ok(Async::NotReady)
-        }
+        };
+        self.inner = Some(inner);
+        ret
     }
 }
 
 impl<UID: Uid> Sink for Socket<UID> {
-    type SinkItem = (Priority, Message<UID>);
+    type SinkItem = (Priority, SocketMessage<UID>);
     type SinkError = SocketError;
 
     fn start_send(
         &mut self,
-        (priority, msg): (Priority, Message<UID>),
-    ) -> Result<AsyncSink<(Priority, Message<UID>)>, SocketError> {
+        (priority, msg): (Priority, SocketMessage<UID>),
+    ) -> Result<AsyncSink<(Priority, SocketMessage<UID>)>, SocketError> {
         let inner = match self.inner {
             Some(ref mut inner) => inner,
             None => return Err(SocketError::Destroyed),
         };
-        let mut data = BytesMut::with_capacity(1024);
+        let mut data = Vec::with_capacity(1024);
         unwrap!(serialise_into(&msg, &mut data));
-        let _ = inner.write_tx.send((priority, data));
+        let data = BytesMut::from(data);
+        let _ = inner.write_tx.unbounded_send((priority, data));
         Ok(AsyncSink::Ready)
     }
 
@@ -174,31 +180,95 @@ impl<UID: Uid> Future for SocketTask<UID> {
         }
 
         let mut all_messages_sent = true;
-        for (priority, queue) in self.write_queue.iter_mut() {
-            let mut put_back = None;
-            for (time, msg) in queue.drain(..) {
+        'outer: for (_, queue) in self.write_queue.iter_mut() {
+            while let Some((time, msg)) = queue.pop_front() {
                 match self.stream_tx.start_send(msg)? {
                     AsyncSink::Ready => (),
                     AsyncSink::NotReady(msg) => {
-                        put_back = Some((time, msg));
-                        break;
+                        queue.push_front((time, msg));
+                        all_messages_sent = false;
+                        break 'outer;
                     },
                 }
             }
-            if let Some((time, msg)) = put_back {
-                queue.push_front((time, msg));
-                all_messages_sent = false;
-                break;
-            }
         }
 
-        if Async::Ready(()) = self.stream_tx.poll_complete()? {
+        if let Async::Ready(()) = self.stream_tx.poll_complete()? {
             if socket_dropped && all_messages_sent {
                 return Ok(Async::Ready(()));
             }
         }
 
         Ok(Async::NotReady)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use tokio_core::reactor::Core;
+    use tokio_core::net::{TcpStream, TcpListener};
+    use futures::{future, stream, Future, Stream, Sink};
+    use void::Void;
+    use rand::{self, Rng};
+    use env_logger;
+
+    use uid::Uid;
+    use common::{Socket, SocketMessage};
+    use util;
+
+    #[test]
+    fn test_socket() {
+        impl Uid for u64 {}
+
+        let _ = env_logger::init();
+
+        let mut core = unwrap!(Core::new());
+        let handle = core.handle();
+        let res: Result<_, Void> = core.run(future::lazy(move || {
+            let listener = unwrap!(TcpListener::bind(&addr!("0.0.0.0:0"), &handle));
+            let addr = unwrap!(listener.local_addr());
+
+            let num_msgs = 1000;
+            let mut msgs = Vec::with_capacity(num_msgs);
+            for _ in 0..num_msgs {
+                let size = rand::thread_rng().gen_range(0, 10000);
+                let data = util::random_vec(size);
+                let msg = SocketMessage::Data(data);
+                msgs.push(msg);
+            }
+
+            let msgs_send: Vec<_> = msgs.iter().cloned().map(|m| (1, m)).collect();
+
+            let handle0 = handle.clone();
+            let f0 = TcpStream::connect(&addr, &handle)
+                .map_err(|err| SocketError::from(err))
+                .and_then(move |stream| {
+                    let socket = Socket::<u64>::wrap_tcp(&handle0, stream);
+                    socket.send_all(stream::iter_ok::<_, SocketError>(msgs_send))
+                        .map(|(_, _)| ())
+                });
+
+            let handle1 = handle.clone();
+            let f1 = listener.incoming().into_future()
+                .map_err(|(err, _)| SocketError::from(err))
+                .and_then(move |(stream_opt, _)| {
+                    let (stream, _) = unwrap!(stream_opt);
+                    let socket = Socket::<u64>::wrap_tcp(&handle1, stream);
+                    socket 
+                        .take(num_msgs as u64)
+                        .collect()
+                        .map(move |msgs_recv| {
+                            assert!(msgs_recv == msgs);
+                        })
+                });
+
+            f0.join(f1)
+                .and_then(|((), ())| Ok(()))
+                .map_err(|e| panic!(e))
+        }));
+        unwrap!(res);
     }
 }
 

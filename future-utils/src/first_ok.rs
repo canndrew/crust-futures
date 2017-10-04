@@ -29,20 +29,23 @@ where
     type Error = Vec<S::Error>;
 
     fn poll(&mut self) -> Result<Async<S::Item>, Vec<S::Error>> {
-        match self.stream.poll() {
-            Ok(Async::Ready(Some(val))) => {
-                self.errors.clear();
-                Ok(Async::Ready(val))
-            },
-            Ok(Async::Ready(None)) => {
-                let errors = mem::replace(&mut self.errors, Vec::new());
-                Err(errors)
-            },
-            Ok(Async::NotReady) => Ok(Async::NotReady),
-            Err(e) => {
-                self.errors.push(e);
-                Ok(Async::NotReady)
-            },
+        loop {
+            match self.stream.poll() {
+                Ok(Async::Ready(Some(val))) => {
+                    self.errors.clear();
+                    return Ok(Async::Ready(val));
+                },
+                Ok(Async::Ready(None)) => {
+                    let errors = mem::replace(&mut self.errors, Vec::new());
+                    return Err(errors);
+                },
+                Ok(Async::NotReady) => {
+                    return Ok(Async::NotReady);
+                },
+                Err(e) => {
+                    self.errors.push(e);
+                },
+            }
         }
     }
 }

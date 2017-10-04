@@ -1,9 +1,11 @@
 use futures::{Future, Stream};
 use log::LogLevel;
+use void::Void;
 
 use until::Until;
 use first_ok::FirstOk;
 use log_errors::LogErrors;
+use infallible::Infallible;
 use BoxStream;
 
 pub trait StreamExt: Stream + Sized {
@@ -28,6 +30,13 @@ pub trait StreamExt: Stream + Sized {
 
     fn log_errors(self, level: LogLevel, description: &'static str) -> LogErrors<Self> {
         LogErrors::new(self, level, description)
+    }
+
+    fn infallible<E>(self) -> Infallible<Self, E>
+    where
+        Self: Stream<Error=Void>
+    {
+        Infallible::new(self)
     }
 }
 

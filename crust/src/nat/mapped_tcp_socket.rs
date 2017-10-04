@@ -1,9 +1,8 @@
-use std::net::SocketAddrV4;
+use std::net::{SocketAddr, SocketAddrV4};
 use net2::TcpBuilder;
-use tokio_core::reactor::Handle;
 use tokio_igd::PortMappingProtocol;
 use futures::{future, stream, Future, Stream};
-use future_utils::{BoxFuture, StreamExt};
+use future_utils::{BoxFuture, FutureExt, StreamExt};
 use log::LogLevel;
 use void;
 
@@ -12,34 +11,38 @@ use nat::{NatError, MappingContext};
 
 /// Create a new, mapped tcp socket.
 pub fn mapped_tcp_socket(
-    handle: &Handle,
     mc: &MappingContext,
-) -> BoxFuture<(TcpBuilder, Vec<SocketAddrV4>), NatError> {
+    addr: &SocketAddr,
+) -> BoxFuture<(TcpBuilder, Vec<SocketAddr>), NatError> {
     let try = || -> Result<_, NatError> {
-        let socket = util::new_reusably_bound_tcp_socket(&addr!("0.0.0.0:0"))?;
+        let socket = util::new_reusably_bound_tcp_socket(addr)?;
         let addr = socket.local_addr()?;
 
         let mut mapped_addrs = mc.ifv4s()
             .iter()
-            .map(|&(ip, _)| SocketAddrV4::new(ip, addr.port()))
+            .map(|ifv4| SocketAddr::V4(SocketAddrV4::new(ifv4.ip(), addr.port())))
             .collect::<Vec<_>>();
 
         let mut mapping_futures = Vec::new();
 
-        for &(ref ip, ref gateway) in mc.ifv4s() {
-            let gateway = match *gateway {
-                Some(ref gateway) => gateway.clone(),
+        for ifv4 in mc.ifv4s() {
+            let gateway = match ifv4.gateway() {
+                Some(gateway) => gateway.clone(),
                 None => continue,
             };
-            let local_endpoint = SocketAddrV4::new(*ip, addr.port());
+            let local_endpoint = SocketAddrV4::new(ifv4.ip(), addr.port());
             let future = gateway.get_any_address(
                 PortMappingProtocol::TCP,
                 local_endpoint,
                 0,
                 "MaidSafeNat",
-            ).map_err(NatError::IgdAddAnyPort);
+            )
+            .map(SocketAddr::V4)
+            .map_err(NatError::IgdAddAnyPort);
             mapping_futures.push(future);
         }
+
+        // TODO: stun peers, and use force_include_port
 
         let mapping_futures = stream::futures_unordered(mapping_futures);
         Ok(mapping_futures
@@ -51,7 +54,7 @@ pub fn mapped_tcp_socket(
                 Ok((socket, mapped_addrs))
             }))
     };
-    future::result(try()).flatten().boxed()
+    future::result(try()).flatten().into_boxed()
 }
 
 #[cfg(test)]
