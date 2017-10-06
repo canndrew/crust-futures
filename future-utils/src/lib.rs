@@ -13,6 +13,7 @@ mod future_ext;
 mod stream_ext;
 mod first_ok;
 mod log_errors;
+mod log_error;
 mod infallible;
 
 pub use drop_notify::{drop_notify, DropNotify, DropNotice};

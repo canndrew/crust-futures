@@ -1,3 +1,8 @@
+// Temporarily allow these while doing heavy refactoring
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
+
 extern crate maidsafe_utilities;
 extern crate serde;
 #[macro_use]

@@ -43,7 +43,7 @@ impl<UID: Uid> Service<UID> {
         MappingContext::new(options)
         .map_err(|e| CrustError::NatError(e))
         .map(move |mc| {
-            let (listeners, incoming) = Listeners::new(&handle);
+            let (listeners, _incoming) = Listeners::new(&handle);
             Service {
                 handle: handle,
                 config: config,
@@ -65,10 +65,10 @@ impl<UID: Uid> Service<UID> {
             CrustUser::Client => ExternalReachability::NotRequired,
         };
         bootstrap::bootstrap(
+            &self.handle,
             self.our_uid,
             self.config.network_name_hash(),
             ext_reachability,
-            &self.handle,
             self.config.clone()
         )
     }

@@ -24,7 +24,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tiny_keccak::sha3_256;
 
 use error::CrustError;
-use common::{NameHash, HASH_SIZE};
+use common::{CrustUser, NameHash, HASH_SIZE};
 
 /// A handle to a crust config file. This handle can be cloned and shared throughout the program.
 #[derive(Clone)]
@@ -88,6 +88,26 @@ impl ConfigFile {
             Some(ref name) => sha3_256(name.as_bytes()),
             None => [0; HASH_SIZE],
         }
+    }
+
+    pub fn is_peer_whitelisted(&self, ip: IpAddr, peer_kind: CrustUser) -> bool {
+        let res = {
+            let config = self.read();
+            let whitelist_opt = match peer_kind {
+                CrustUser::Node => config.whitelisted_node_ips.as_ref(),
+                CrustUser::Client => config.whitelisted_client_ips.as_ref(),
+            };
+            match whitelist_opt {
+                None => true,
+                Some(whitelist) => whitelist.contains(&ip),
+            }
+        };
+
+        if !res {
+            trace!("IP: {} is not whitelisted.", ip);
+        }
+
+        res
     }
 }
 

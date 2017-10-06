@@ -6,7 +6,7 @@ use future_utils::{BoxFuture, FutureExt, StreamExt};
 use log::LogLevel;
 use void;
 
-use nat::util;
+use util;
 use nat::{NatError, MappingContext};
 
 /// Create a new, mapped tcp socket.

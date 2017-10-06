@@ -3,6 +3,8 @@ use config::{self, ConfigFile};
 use error::CrustError;
 use compat::CrustEventSender;
 
+/// This type is a compatibility layer to provide a message-passing API over the underlying
+/// futures-based implementation of Service.
 pub struct Service<UID: Uid> {
     event_tx: CrustEventSender<UID>,
 }

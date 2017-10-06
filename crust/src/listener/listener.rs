@@ -15,11 +15,13 @@ use uid::Uid;
 
 const LISTENER_BACKLOG: i32 = 100;
 
+/// A handle for a single listening address. Drop this object to stop listening on this address.
 pub struct Listener {
     _drop_tx: DropNotify,
     local_addr: SocketAddr,
 }
 
+/// A set of listeners.
 pub struct Listeners<UID: Uid> {
     handle: Handle,
     listeners_tx: UnboundedSender<(DropNotice, Incoming, Vec<SocketAddr>)>,
@@ -27,6 +29,7 @@ pub struct Listeners<UID: Uid> {
     _ph: PhantomData<UID>,
 }
 
+/// Created in tandem with a `Listeners`, represents the incoming stream of connections.
 pub struct SocketIncoming<UID: Uid> {
     handle: Handle,
     listeners_rx: UnboundedReceiver<(DropNotice, Incoming, Vec<SocketAddr>)>,
@@ -36,6 +39,7 @@ pub struct SocketIncoming<UID: Uid> {
 }
 
 impl<UID: Uid> Listeners<UID> {
+    /// Create an (empty) set of listeners and a handle to its incoming stream of connections.
     pub fn new(handle: &Handle) -> (Listeners<UID>, SocketIncoming<UID>) {
         let (tx, rx) = mpsc::unbounded();
         let addresses = Arc::new(Mutex::new(Vec::new()));
@@ -55,10 +59,13 @@ impl<UID: Uid> Listeners<UID> {
         (listeners, incoming)
     }
 
+    /// All known addresses we may be contactable on. Includes global, NAT-mapped addresses.
     pub fn addresses(&self) -> Vec<SocketAddr> {
         unwrap!(self.addresses.lock()).clone()
     }
 
+    /// Adds a new listener to the set of listeners, listening on the given local address, and
+    /// returns a handle to it.
     pub fn listener(&self, listen_addr: &SocketAddr, mc: &MappingContext) -> BoxFuture<Listener, NatError> {
         let handle = self.handle.clone();
         let tx = self.listeners_tx.clone();
@@ -69,7 +76,7 @@ impl<UID: Uid> Listeners<UID> {
             let listener = TcpListener::from_listener(listener, &local_addr, &handle)?;
             let incoming = listener.incoming();
             let (_drop_tx, drop_rx) = future_utils::drop_notify();
-            tx.unbounded_send((drop_rx, incoming, addrs));
+            let _ = tx.unbounded_send((drop_rx, incoming, addrs));
             Ok(Listener {
                 _drop_tx,
                 local_addr,
@@ -97,9 +104,10 @@ impl<UID: Uid> Stream for SocketIncoming<UID> {
             {
                 let &mut (ref mut drop_notice, ref mut listener, _) = &mut self.listeners[i];
                 if let Ok(Async::NotReady) = drop_notice.poll() {
-                    if let Async::Ready(Some((stream, addr))) = listener.poll()? {
-                        let peer = Socket::wrap_tcp(&self.handle, stream);
-                        return Ok(Async::Ready(Some(peer)));
+                    if let Async::Ready(Some((stream, _addr))) = listener.poll()? {
+                        if let Ok(socket) = Socket::wrap_tcp(&self.handle, stream) {
+                            return Ok(Async::Ready(Some(socket)));
+                        }
                     }
                     i += 1;
                     continue;

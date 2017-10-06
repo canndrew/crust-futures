@@ -2,6 +2,7 @@ use std::time::Instant;
 use std::collections::{BTreeMap, VecDeque};
 use std::io;
 use std::marker::PhantomData;
+use std::net::SocketAddr;
 use tokio_core::reactor::Handle;
 use tokio_core::net::TcpStream;
 use tokio_io::codec::length_delimited::{self, Framed};
@@ -50,6 +51,7 @@ pub struct Socket<UID: Uid> {
 pub struct Inner<UID: Uid> {
     stream_rx: SplitStream<Framed<TcpStream>>,
     write_tx: UnboundedSender<(Priority, BytesMut)>,
+    peer_addr: SocketAddr,
     _ph: PhantomData<UID>,
 }
 
@@ -61,7 +63,8 @@ struct SocketTask<UID: Uid> {
 }
 
 impl<UID: Uid> Socket<UID> {
-    pub fn wrap_tcp(handle: &Handle, stream: TcpStream) -> Socket<UID> {
+    pub fn wrap_tcp(handle: &Handle, stream: TcpStream) -> io::Result<Socket<UID>> {
+        let peer_addr = stream.peer_addr()?;
         let framed = length_delimited::Builder::new()
             .max_frame_length(MAX_PAYLOAD_SIZE)
             .new_framed(stream);
@@ -79,10 +82,18 @@ impl<UID: Uid> Socket<UID> {
         let inner = Inner {
             stream_rx: stream_rx,
             write_tx: write_tx,
+            peer_addr: peer_addr,
             _ph: PhantomData,
         };
-        Socket {
+        Ok(Socket {
             inner: Some(inner),
+        })
+    }
+
+    pub fn peer_addr(&self) -> Result<SocketAddr, SocketError> {
+        match self.inner {
+            Some(ref inner) => Ok(inner.peer_addr),
+            None => Err(SocketError::Destroyed),
         }
     }
 }

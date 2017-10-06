@@ -25,7 +25,8 @@ use tokio_igd::{self, Gateway};
 use futures::{future, stream, Future, Stream};
 use future_utils::{BoxFuture, FutureExt};
 
-use nat::{self, NatError};
+use nat::NatError;
+use util;
 
 /// Keeps track of information about external mapping servers
 #[derive(Debug)]
@@ -105,7 +106,7 @@ impl MappingContext {
     /// STUN but a custom STUN-like protocol.
     pub fn add_peer_stuns<A: IntoIterator<Item = SocketAddr>>(&mut self, stun_addrs: A) {
         let listeners = stun_addrs.into_iter().filter(|elt| {
-            nat::util::ip_addr_is_global(&elt.ip())
+            util::ip_addr_is_global(&elt.ip())
         });
         self.peer_stuns.extend(listeners);
     }

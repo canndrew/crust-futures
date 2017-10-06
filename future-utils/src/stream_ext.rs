@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use futures::{Future, Stream};
 use log::LogLevel;
 use void::Void;
@@ -28,7 +29,10 @@ pub trait StreamExt: Stream + Sized {
         FirstOk::new(self)
     }
 
-    fn log_errors(self, level: LogLevel, description: &'static str) -> LogErrors<Self> {
+    fn log_errors(self, level: LogLevel, description: &'static str) -> LogErrors<Self>
+    where
+        Self::Error: Display
+    {
         LogErrors::new(self, level, description)
     }
 
