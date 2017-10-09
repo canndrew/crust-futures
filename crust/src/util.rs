@@ -15,9 +15,7 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use net2::TcpBuilder;
-use std::io;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use priv_prelude::*;
 #[cfg(test)]
 use rand::{self, Rng};
 

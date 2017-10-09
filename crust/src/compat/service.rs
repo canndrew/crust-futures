@@ -1,5 +1,5 @@
-use uid::Uid;
-use config::{self, ConfigFile};
+use priv_prelude::*;
+
 use error::CrustError;
 use compat::CrustEventSender;
 

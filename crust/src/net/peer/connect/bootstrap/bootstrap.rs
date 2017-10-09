@@ -1,27 +1,12 @@
-use std::io;
-use std::net::SocketAddr;
-use std::rc::Rc;
-use std::collections::HashMap;
-use tokio_core::reactor::Handle;
-use tokio_core::net::TcpStream;
-use futures::{future, stream, Future, Stream, Sink};
-use future_utils::{FutureExt, StreamExt, BoxFuture};
 use service_discovery;
 use log::LogLevel;
-use void::Void;
 use config_file_handler;
 
-use config::ConfigFile;
-use common::{ExternalReachability, NameHash, Socket, SocketError, BootstrapDenyReason};
-use uid::Uid;
-use error::CrustError;
+use priv_prelude::*;
+use net::peer::connect::bootstrap::{TryPeerError, ConnectHandshakeError};
+use net::peer::connect::bootstrap::try_peer::try_peer;
+use net::peer::connect::bootstrap::cache::Cache;
 use service;
-use common::SocketMessage;
-use peer::{Peer, ConnectHandshakeError};
-
-mod cache;
-
-use self::cache::Cache;
 
 quick_error! {
     /// Error returned when bootstrapping fails.
@@ -39,23 +24,6 @@ quick_error! {
         AllPeersFailed(e: HashMap<SocketAddr, TryPeerError>) {
             description("Failed to connect to any bootstrap peer")
             display("Failed to connect to any bootstrap peer, all {} attempts failed. Errors: {:?}", e.len(), e)
-        }
-    }
-}
-
-quick_error! {
-    /// Error returned when we fail to connect to some specific peer.
-    #[derive(Debug)]
-    pub enum TryPeerError {
-        Connect(e: io::Error) {
-            description("IO error connecting to remote peer")
-            display("IO error connecting to remote peer: {}", e)
-            from(e)
-        }
-        Handshake(e: ConnectHandshakeError) {
-            description("Error during peer handshake")
-            display("Error during peer handshake: {}", e)
-            from()
         }
     }
 }
@@ -97,31 +65,5 @@ pub fn bootstrap<UID: Uid>(
         )
     };
     future::result(try()).flatten().into_boxed()
-}
-
-/// Try to bootstrap to the given peer.
-fn try_peer<UID: Uid>(
-    handle: &Handle,
-    addr: &SocketAddr,
-    our_uid: UID,
-    name_hash: NameHash,
-    ext_reachability: ExternalReachability,
-) -> BoxFuture<Peer<UID>, TryPeerError> {
-    let handle = handle.clone();
-    TcpStream::connect(addr, &handle)
-        .and_then(move |stream| {
-            Socket::wrap_tcp(&handle, stream)
-        })
-        .map_err(TryPeerError::Connect)
-        .and_then(move |socket| {
-            Peer::bootstrap_connect_handshake(
-                socket,
-                our_uid,
-                name_hash,
-                ext_reachability,
-            )
-            .map_err(TryPeerError::Handshake)
-        })
-        .into_boxed()
 }
 

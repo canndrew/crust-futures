@@ -1,20 +1,11 @@
-use std::time::Instant;
-use std::collections::{BTreeMap, VecDeque};
-use std::io;
-use std::marker::PhantomData;
-use std::net::SocketAddr;
-use tokio_core::reactor::Handle;
-use tokio_core::net::TcpStream;
 use tokio_io::codec::length_delimited::{self, Framed};
-use futures::{Async, AsyncSink, Future, Stream, Sink};
 use futures::stream::{SplitStream, SplitSink};
 use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
 use bytes::BytesMut;
 use maidsafe_utilities::serialisation::{serialise_into, deserialise, SerialisationError};
+use priv_prelude::*;
 
-use common::{MAX_PAYLOAD_SIZE, SocketMessage};
-use uid::Uid;
-
+pub const MAX_PAYLOAD_SIZE: usize = 2 * 1024 * 1024;
 pub type Priority = u8;
 
 /// Minimum priority for droppable messages. Messages with lower values will never be dropped.
@@ -44,37 +35,35 @@ quick_error! {
     }
 }
 
-pub struct Socket<UID: Uid> {
-    inner: Option<Inner<UID>>,
+pub struct Socket<M> {
+    inner: Option<Inner>,
+    _ph: PhantomData<M>,
 }
 
-pub struct Inner<UID: Uid> {
+pub struct Inner {
     stream_rx: SplitStream<Framed<TcpStream>>,
     write_tx: UnboundedSender<(Priority, BytesMut)>,
     peer_addr: SocketAddr,
-    _ph: PhantomData<UID>,
 }
 
-struct SocketTask<UID: Uid> {
+struct SocketTask {
     stream_tx: SplitSink<Framed<TcpStream>>,
     write_queue: BTreeMap<Priority, VecDeque<(Instant, BytesMut)>>,
     write_rx: UnboundedReceiver<(Priority, BytesMut)>,
-    _ph: PhantomData<UID>,
 }
 
-impl<UID: Uid> Socket<UID> {
-    pub fn wrap_tcp(handle: &Handle, stream: TcpStream) -> io::Result<Socket<UID>> {
+impl<M: 'static> Socket<M> {
+    pub fn wrap_tcp(handle: &Handle, stream: TcpStream) -> io::Result<Socket<M>> {
         let peer_addr = stream.peer_addr()?;
         let framed = length_delimited::Builder::new()
             .max_frame_length(MAX_PAYLOAD_SIZE)
             .new_framed(stream);
         let (stream_tx, stream_rx) = framed.split();
         let (write_tx, write_rx) = mpsc::unbounded();
-        let task: SocketTask<UID> = SocketTask {
+        let task = SocketTask {
             stream_tx: stream_tx,
             write_queue: BTreeMap::new(),
             write_rx: write_rx,
-            _ph: PhantomData,
         };
         handle.spawn(task.map_err(|e| {
             error!("Socket task failed!: {}", e);
@@ -83,10 +72,10 @@ impl<UID: Uid> Socket<UID> {
             stream_rx: stream_rx,
             write_tx: write_tx,
             peer_addr: peer_addr,
-            _ph: PhantomData,
         };
         Ok(Socket {
             inner: Some(inner),
+            _ph: PhantomData,
         })
     }
 
@@ -96,13 +85,23 @@ impl<UID: Uid> Socket<UID> {
             None => Err(SocketError::Destroyed),
         }
     }
+
+    pub fn change_message_type<N>(self) -> Socket<N> {
+        Socket {
+            inner: self.inner,
+            _ph: PhantomData,
+        }
+    }
 }
 
-impl<UID: Uid> Stream for Socket<UID> {
-    type Item = SocketMessage<UID>;
+impl<M> Stream for Socket<M>
+where
+    M: Serialize + DeserializeOwned
+{
+    type Item = M;
     type Error = SocketError;
 
-    fn poll(&mut self) -> Result<Async<Option<SocketMessage<UID>>>, SocketError> {
+    fn poll(&mut self) -> Result<Async<Option<M>>, SocketError> {
         let mut inner = match self.inner.take() {
             Some(inner) => inner,
             None => return Err(SocketError::Destroyed),
@@ -122,14 +121,17 @@ impl<UID: Uid> Stream for Socket<UID> {
     }
 }
 
-impl<UID: Uid> Sink for Socket<UID> {
-    type SinkItem = (Priority, SocketMessage<UID>);
+impl<M> Sink for Socket<M>
+where
+    M: Serialize + DeserializeOwned
+{
+    type SinkItem = (Priority, M);
     type SinkError = SocketError;
 
     fn start_send(
         &mut self,
-        (priority, msg): (Priority, SocketMessage<UID>),
-    ) -> Result<AsyncSink<(Priority, SocketMessage<UID>)>, SocketError> {
+        (priority, msg): (Priority, M),
+    ) -> Result<AsyncSink<(Priority, M)>, SocketError> {
         let inner = match self.inner {
             Some(ref mut inner) => inner,
             None => return Err(SocketError::Destroyed),
@@ -146,7 +148,7 @@ impl<UID: Uid> Sink for Socket<UID> {
     }
 }
 
-impl<UID: Uid> Future for SocketTask<UID> {
+impl Future for SocketTask {
     type Item = ();
     type Error = io::Error;
 

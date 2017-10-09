@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-
 extern crate maidsafe_utilities;
 extern crate serde;
 #[macro_use]
@@ -31,17 +30,15 @@ extern crate rand;
 extern crate env_logger;
 extern crate tiny_keccak;
 
-mod uid;
-mod config;
 mod error;
-mod nat;
+mod config;
 mod common;
 pub mod compat;
 mod service;
 mod util;
-mod bootstrap;
-mod listener;
-mod peer;
+mod net;
+
+mod priv_prelude;
 
 //pub use config::{Config};
 pub use service::Service;

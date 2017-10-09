@@ -1,4 +1,4 @@
-use uid::Uid;
+use priv_prelude::*;
 
 #[derive(Debug)]
 pub enum Event<UID: Uid> {

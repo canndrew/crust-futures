@@ -1,6 +1,5 @@
-use std::io;
 use config_file_handler;
-use nat::NatError;
+use priv_prelude::*;
 
 quick_error! {
     /// Crust's universal error type.

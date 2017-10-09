@@ -18,15 +18,11 @@
 //! Defines the `MappingContext` type
 
 
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::time::Duration;
 use get_if_addrs::{self, IfAddr};
 use tokio_igd::{self, Gateway};
-use futures::{future, stream, Future, Stream};
-use future_utils::{BoxFuture, FutureExt};
 
-use nat::NatError;
 use util;
+use priv_prelude::*;
 
 /// Keeps track of information about external mapping servers
 #[derive(Debug)]

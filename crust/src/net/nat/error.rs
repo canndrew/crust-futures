@@ -15,35 +15,26 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
-use config_file_handler::{self, FileHandler};
-use std::ffi::OsString;
-use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use tokio_igd;
+use priv_prelude::*;
 
-pub struct Cache {
-    file_handler: FileHandler<Vec<SocketAddr>>,
+quick_error! {
+    /// Nat Traversal specific error
+    #[derive(Debug)]
+    pub enum NatError {
+        /// IO error
+        Io(e: io::Error) {
+            description("Io error during nat traversal")
+            display("Io error during nat traversal: {}", e)
+            cause(e)
+            from()
+        }
+        /// IGD error
+        IgdAddAnyPort(e: tokio_igd::AddAnyPortError) {
+            description("Error requesting port from IGD gateway")
+            display("Error requesting port from IGD gateway: {}", e)
+            cause(e)
+            from()
+        }
+    }
 }
-
-impl Cache {
-    pub fn new(name: Option<&Path>) -> Result<Self, config_file_handler::Error> {
-        Ok(Cache {
-            file_handler: FileHandler::new(
-                name.unwrap_or(&Self::default_file_name()?),
-                true,
-            )?, // last_updated: Instant::now(),
-        })
-    }
-
-    pub fn default_file_name() -> Result<PathBuf, config_file_handler::Error> {
-        let mut name = config_file_handler::exe_file_stem()?;
-        name.push(".bootstrap.cache");
-        Ok(PathBuf::from(name))
-    }
-
-    pub fn read_file(&mut self) -> Vec<SocketAddr> {
-        self.file_handler.read_file().ok().unwrap_or_else(|| vec![])
-    }
-
-    pub fn remove_peer_acceptor(&mut self, _peer: SocketAddr) {}
-}
-

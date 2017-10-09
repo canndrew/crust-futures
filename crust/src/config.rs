@@ -16,15 +16,11 @@
 // relating to use of the SAFE Network Software.
 
 use config_file_handler::{self, FileHandler};
-use std::collections::HashSet;
-use std::net::{IpAddr, SocketAddr};
 use std::ops::{Deref, DerefMut};
-use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tiny_keccak::sha3_256;
 
-use error::CrustError;
-use common::{CrustUser, NameHash, HASH_SIZE};
+use priv_prelude::*;
 
 /// A handle to a crust config file. This handle can be cloned and shared throughout the program.
 #[derive(Clone)]

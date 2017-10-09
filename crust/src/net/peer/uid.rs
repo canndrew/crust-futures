@@ -1,7 +1,5 @@
-use std::fmt;
 use std::hash::Hash;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
+use priv_prelude::*;
 
 /// Trait for specifying a unique identifier for a Crust peer
 pub trait Uid

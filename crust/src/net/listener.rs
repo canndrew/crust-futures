@@ -1,17 +1,10 @@
-use std::marker::PhantomData;
-use std::io;
-use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
-use futures::{Async, Future, Stream};
+use tokio_core::net::Incoming;
 use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
-use future_utils::{self, BoxFuture, FutureExt, DropNotify, DropNotice};
-use tokio_core::reactor::Handle;
-use tokio_core::net::{TcpListener, Incoming};
-use void;
+use future_utils::{self, DropNotify, DropNotice};
+use net::nat;
 
-use nat::{self, MappingContext, NatError};
-use common::Socket;
-use uid::Uid;
+use priv_prelude::*;
 
 const LISTENER_BACKLOG: i32 = 100;
 
@@ -22,39 +15,35 @@ pub struct Listener {
 }
 
 /// A set of listeners.
-pub struct Listeners<UID: Uid> {
+pub struct Listeners {
     handle: Handle,
     listeners_tx: UnboundedSender<(DropNotice, Incoming, Vec<SocketAddr>)>,
     addresses: Arc<Mutex<Vec<SocketAddr>>>,
-    _ph: PhantomData<UID>,
 }
 
 /// Created in tandem with a `Listeners`, represents the incoming stream of connections.
-pub struct SocketIncoming<UID: Uid> {
+pub struct SocketIncoming {
     handle: Handle,
     listeners_rx: UnboundedReceiver<(DropNotice, Incoming, Vec<SocketAddr>)>,
     listeners: Vec<(DropNotice, Incoming, Vec<SocketAddr>)>,
     addresses: Arc<Mutex<Vec<SocketAddr>>>,
-    _ph: PhantomData<UID>,
 }
 
-impl<UID: Uid> Listeners<UID> {
+impl Listeners {
     /// Create an (empty) set of listeners and a handle to its incoming stream of connections.
-    pub fn new(handle: &Handle) -> (Listeners<UID>, SocketIncoming<UID>) {
+    pub fn new(handle: &Handle) -> (Listeners, SocketIncoming) {
         let (tx, rx) = mpsc::unbounded();
         let addresses = Arc::new(Mutex::new(Vec::new()));
         let listeners = Listeners {
             handle: handle.clone(),
             listeners_tx: tx,
             addresses: addresses.clone(),
-            _ph: PhantomData,
         };
         let incoming = SocketIncoming {
             handle: handle.clone(),
             listeners_rx: rx,
             listeners: Vec::new(),
             addresses: addresses,
-            _ph: PhantomData,
         };
         (listeners, incoming)
     }
@@ -86,11 +75,11 @@ impl<UID: Uid> Listeners<UID> {
     }
 }
 
-impl<UID: Uid> Stream for SocketIncoming<UID> {
-    type Item = Socket<UID>;
+impl Stream for SocketIncoming {
+    type Item = Socket<Void>;
     type Error = io::Error;
 
-    fn poll(&mut self) -> io::Result<Async<Option<Socket<UID>>>> {
+    fn poll(&mut self) -> io::Result<Async<Option<Socket<Void>>>> {
         while let Async::Ready(incoming_opt) = unwrap!(self.listeners_rx.poll()) {
             let (drop_rx, incoming, addrs) = match incoming_opt {
                 Some(x) => x,

@@ -1,17 +1,7 @@
-use std::marker::PhantomData;
-use std::net::{SocketAddr, SocketAddrV4};
-use tokio_core::reactor::Handle;
-use futures::{future, Future};
-use future_utils::{FutureExt, BoxFuture};
+use priv_prelude::*;
 
-use config::ConfigFile;
-use uid::Uid;
-use error::CrustError;
-use bootstrap::{self, BootstrapError};
-use common::{CrustUser, ExternalReachability, NameHash};
-use nat::{mapping_context, MappingContext};
-use listener::{Listener, Listeners};
-use peer::Peer;
+use net::{self, Acceptor, Listener};
+use net::nat::{self, mapping_context};
 
 pub const SERVICE_DISCOVERY_DEFAULT_PORT: u16 = 5484;
 
@@ -20,7 +10,7 @@ pub struct Service<UID: Uid> {
     config: ConfigFile,
     our_uid: UID,
     mc: MappingContext,
-    listeners: Listeners<UID>,
+    acceptor: Acceptor<UID>,
 }
 
 impl<UID: Uid> Service<UID> {
@@ -43,13 +33,13 @@ impl<UID: Uid> Service<UID> {
         MappingContext::new(options)
         .map_err(|e| CrustError::NatError(e))
         .map(move |mc| {
-            let (listeners, _incoming) = Listeners::new(&handle);
+            let acceptor = Acceptor::new(&handle, our_uid, config.clone());
             Service {
-                handle: handle,
-                config: config,
-                our_uid: our_uid,
-                mc: mc,
-                listeners: listeners,
+                handle,
+                config,
+                our_uid,
+                mc,
+                acceptor,
             }
         })
         .into_boxed()
@@ -59,12 +49,12 @@ impl<UID: Uid> Service<UID> {
         let ext_reachability = match crust_user {
             CrustUser::Node => {
                 ExternalReachability::Required {
-                    direct_listeners: self.listeners.addresses(),
+                    direct_listeners: self.acceptor.addresses(),
                 }
             }
             CrustUser::Client => ExternalReachability::NotRequired,
         };
-        bootstrap::bootstrap(
+        net::bootstrap(
             &self.handle,
             self.our_uid,
             self.config.network_name_hash(),
@@ -76,9 +66,25 @@ impl<UID: Uid> Service<UID> {
     pub fn start_listener(&self) -> BoxFuture<Listener, CrustError> {
         let port = self.config.read().tcp_acceptor_port.unwrap_or(0);
         let addr = SocketAddr::new(ip!("0.0.0.0"), port);
-        self.listeners.listener(&addr, &self.mc)
+        self.acceptor.listener(&addr, &self.mc)
             .map_err(CrustError::NatError)
             .into_boxed()
+    }
+
+    pub fn prepare_connection_info(&self) -> BoxFuture<PrivConnectionInfo<UID>, CrustError> {
+        let our_uid = self.our_uid;
+        let direct_addrs = self.acceptor.addresses();
+        nat::mapped_tcp_socket(&self.mc, &addr!("0.0.0.0:0"))
+        .map(move |(socket, hole_punch_addrs)| {
+            PrivConnectionInfo {
+                id: our_uid,
+                for_direct: direct_addrs,
+                for_hole_punch: hole_punch_addrs,
+                hole_punch_socket: Some(socket),
+            }
+        })
+        .map_err(CrustError::NatError)
+        .into_boxed()
     }
 }
 
