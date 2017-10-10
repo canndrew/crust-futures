@@ -1,3 +1,5 @@
+use maidsafe_utilities::serialisation::SerialisationError;
+use net::peer;
 use net::peer::connect::handshake_message::{HandshakeMessage, BootstrapDenyReason, BootstrapRequest};
 use priv_prelude::*;
 
@@ -21,21 +23,37 @@ quick_error! {
 quick_error! {
     #[derive(Debug)]
     pub enum ConnectHandshakeError {
-        Socket(e: SocketError) {
-            description("Error on the underlying socket")
-            display("Error on the underlying socket: {}", e)
-            from()
-        }
         BootstrapDenied(e: BootstrapDenyReason) {
             description("Bootstrap denied")
             display("Bootstrap denied. reason: {:?}", e)
             from(e)
+        }
+        Io(e: io::Error) {
+            description("io error on the socket")
+            display("io error on the socket: {}", e)
+            cause(e)
+            from()
+        }
+        Deserialisation(e: SerialisationError) {
+            description("error deserializing response from peer")
+            display("error deserializing response from peer: {}", e)
+            cause(e)
         }
         InvalidResponse {
             description("Invalid response from peer")
         }
         Disconnected {
             description("Disconnected from peer")
+        }
+    }
+}
+
+impl From<SocketError> for ConnectHandshakeError {
+    fn from(e: SocketError) -> ConnectHandshakeError {
+        match e {
+            SocketError::Io(e) => ConnectHandshakeError::Io(e),
+            SocketError::Destroyed => ConnectHandshakeError::Disconnected,
+            SocketError::Deserialisation(e) => ConnectHandshakeError::Deserialisation(e),
         }
     }
 }
@@ -48,14 +66,17 @@ pub fn try_peer<UID: Uid>(
     name_hash: NameHash,
     ext_reachability: ExternalReachability,
 ) -> BoxFuture<Peer<UID>, TryPeerError> {
-    let handle = handle.clone();
-    TcpStream::connect(addr, &handle)
-        .and_then(move |stream| {
-            Socket::wrap_tcp(&handle, stream)
+    let handle0 = handle.clone();
+    let handle1 = handle.clone();
+    let addr = *addr;
+    TcpStream::connect(&addr, &handle)
+        .map(move |stream| {
+            Socket::wrap_tcp(&handle0, stream, addr)
         })
         .map_err(TryPeerError::Connect)
         .and_then(move |socket| {
             bootstrap_connect_handshake(
+                &handle1,
                 socket,
                 our_uid,
                 name_hash,
@@ -68,11 +89,13 @@ pub fn try_peer<UID: Uid>(
 
 /// Construct a `Peer` by performing a bootstrap connection handshake on a socket.
 pub fn bootstrap_connect_handshake<UID: Uid>(
+    handle: &Handle,
     socket: Socket<HandshakeMessage<UID>>,
     our_uid: UID,
     name_hash: NameHash,
     ext_reachability: ExternalReachability,
 ) -> BoxFuture<Peer<UID>, ConnectHandshakeError> {
+    let handle = handle.clone();
     let request = BootstrapRequest {
         uid: our_uid,
         name_hash: name_hash,
@@ -80,16 +103,16 @@ pub fn bootstrap_connect_handshake<UID: Uid>(
     };
     let msg =  HandshakeMessage::BootstrapRequest(request);
     socket.send((0, msg))
-    .map_err(ConnectHandshakeError::Socket)
-    .and_then(|socket| {
+    .map_err(ConnectHandshakeError::from)
+    .and_then(move |socket| {
         socket
             .into_future()
-            .map_err(|(e, _)| ConnectHandshakeError::Socket(e))
-            .and_then(|(msg_opt, socket)| {
+            .map_err(|(e, _)| ConnectHandshakeError::from(e))
+            .and_then(move |(msg_opt, socket)| {
                 match msg_opt {
                     Some(HandshakeMessage::BootstrapGranted(peer_uid)) => {
-                        let peer = Peer::from_handshaken_socket(socket, peer_uid);
-                        Ok(peer)
+                        peer::from_handshaken_socket(&handle, socket, peer_uid)
+                        .map_err(ConnectHandshakeError::from)
                     }
                     Some(HandshakeMessage::BootstrapDenied(reason)) => {
                         Err(ConnectHandshakeError::BootstrapDenied(reason))

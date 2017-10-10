@@ -3,7 +3,7 @@ use priv_prelude::*;
 
 pub fn tcp_hole_punch(
     handle: &Handle,
-    socket: &TcpBuilder,
+    socket: TcpBuilder,
     remote_addrs: &[SocketAddr],
 ) -> io::Result<IoStream<(TcpStream, SocketAddr)>> {
     let mut sockets = Vec::new();

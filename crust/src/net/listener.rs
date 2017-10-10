@@ -93,10 +93,9 @@ impl Stream for SocketIncoming {
             {
                 let &mut (ref mut drop_notice, ref mut listener, _) = &mut self.listeners[i];
                 if let Ok(Async::NotReady) = drop_notice.poll() {
-                    if let Async::Ready(Some((stream, _addr))) = listener.poll()? {
-                        if let Ok(socket) = Socket::wrap_tcp(&self.handle, stream) {
-                            return Ok(Async::Ready(Some(socket)));
-                        }
+                    if let Async::Ready(Some((stream, addr))) = listener.poll()? {
+                        let socket = Socket::wrap_tcp(&self.handle, stream, addr);
+                        return Ok(Async::Ready(Some(socket)));
                     }
                     i += 1;
                     continue;

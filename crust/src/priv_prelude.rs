@@ -17,6 +17,6 @@ pub use void::Void;
 pub use net::Uid;
 pub use config::ConfigFile;
 pub use error::CrustError;
-pub use net::{ConnectHandshakeError, BootstrapAcceptError, BootstrapError, ExternalReachability, NatError, MappingContext, Peer, PrivConnectionInfo, PubConnectionInfo, Socket, SocketError};
+pub use net::{ConnectHandshakeError, BootstrapAcceptError, BootstrapError, ExternalReachability, NatError, MappingContext, Peer, PrivConnectionInfo, PubConnectionInfo, Socket, SocketError, ConnectError, Priority};
 pub use common::{CrustUser, NameHash, HASH_SIZE};
 

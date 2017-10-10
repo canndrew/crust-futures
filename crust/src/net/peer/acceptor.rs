@@ -49,5 +49,20 @@ impl<UID: Uid> Acceptor<UID> {
             self.our_uid,
         )
     }
+
+    pub fn connect(
+        &self,
+        name_hash: NameHash,
+        our_info: PrivConnectionInfo<UID>,
+        their_info: PubConnectionInfo<UID>,
+    ) -> BoxFuture<Peer<UID>, ConnectError> {
+        self.demux.connect(
+            &self.handle,
+            name_hash,
+            our_info,
+            their_info,
+            self.config.clone(),
+        )
+    }
 }
 

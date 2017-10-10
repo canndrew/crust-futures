@@ -53,8 +53,7 @@ struct SocketTask {
 }
 
 impl<M: 'static> Socket<M> {
-    pub fn wrap_tcp(handle: &Handle, stream: TcpStream) -> io::Result<Socket<M>> {
-        let peer_addr = stream.peer_addr()?;
+    pub fn wrap_tcp(handle: &Handle, stream: TcpStream, peer_addr: SocketAddr) -> Socket<M> {
         let framed = length_delimited::Builder::new()
             .max_frame_length(MAX_PAYLOAD_SIZE)
             .new_framed(stream);
@@ -73,10 +72,10 @@ impl<M: 'static> Socket<M> {
             write_tx: write_tx,
             peer_addr: peer_addr,
         };
-        Ok(Socket {
+        Socket {
             inner: Some(inner),
             _ph: PhantomData,
-        })
+        }
     }
 
     pub fn peer_addr(&self) -> Result<SocketAddr, SocketError> {

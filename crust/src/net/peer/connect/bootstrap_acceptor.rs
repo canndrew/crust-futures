@@ -1,5 +1,6 @@
 use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
 use futures::stream::FuturesUnordered;
+use net::peer;
 use net::peer::connect::handshake_message::{HandshakeMessage, BootstrapRequest, BootstrapDenyReason};
 use util;
 use priv_prelude::*;
@@ -117,6 +118,7 @@ pub fn bootstrap_accept<UID: Uid>(
     bootstrap_request: BootstrapRequest<UID>,
 ) -> BoxFuture<Peer<UID>, BootstrapAcceptError>
 {
+    let handle = handle.clone();
     let their_uid = bootstrap_request.uid;
     let their_name_hash = bootstrap_request.name_hash;
     let their_ext_reachability = bootstrap_request.ext_reachability;
@@ -161,7 +163,7 @@ pub fn bootstrap_accept<UID: Uid>(
 
                 if !require_reachability {
                     return Ok(
-                        grant_bootstrap(socket, our_uid, their_uid)
+                        grant_bootstrap(&handle, socket, our_uid, their_uid)
                         .map_err(BootstrapAcceptError::Socket)
                         .into_boxed()
                     );
@@ -171,7 +173,7 @@ pub fn bootstrap_accept<UID: Uid>(
                     direct_listeners
                     .into_iter()
                     .filter(|addr| util::ip_addr_is_global(&addr.ip()))
-                    .map(|addr| TcpStream::connect(&addr, handle))
+                    .map(|addr| TcpStream::connect(&addr, &handle))
                     .collect::<Vec<_>>()
                 };
                 let connectors = stream::futures_unordered(connectors);
@@ -182,7 +184,7 @@ pub fn bootstrap_accept<UID: Uid>(
                     .then(move |res| {
                         match res {
                             Ok(_connection) => {
-                                grant_bootstrap(socket, our_uid, their_uid)
+                                grant_bootstrap(&handle, socket, our_uid, their_uid)
                                 .map_err(BootstrapAcceptError::Socket)
                                 .into_boxed()
                             },
@@ -215,7 +217,7 @@ pub fn bootstrap_accept<UID: Uid>(
                 }
 
                 Ok(
-                    grant_bootstrap(socket, our_uid, their_uid)
+                    grant_bootstrap(&handle, socket, our_uid, their_uid)
                     .map_err(BootstrapAcceptError::Socket)
                     .into_boxed()
                 )
@@ -228,13 +230,16 @@ pub fn bootstrap_accept<UID: Uid>(
 }
 
 fn grant_bootstrap<UID: Uid>(
+    handle: &Handle,
     socket: Socket<HandshakeMessage<UID>>,
     our_uid: UID,
     their_uid: UID,
 ) -> BoxFuture<Peer<UID>, SocketError> {
+    let handle = handle.clone();
     socket.send((0, HandshakeMessage::BootstrapGranted(our_uid)))
-    .map(move |socket| {
-        Peer::from_handshaken_socket(socket, their_uid)
+    .and_then(move |socket| {
+        peer::from_handshaken_socket(&handle, socket, their_uid)
+        .map_err(SocketError::Io)
     })
     .into_boxed()
 }

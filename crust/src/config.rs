@@ -107,6 +107,13 @@ impl ConfigFile {
     }
 }
 
+impl fmt::Debug for ConfigFile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let inner = unwrap!(self.inner.read());
+        fmt::Debug::fmt(&inner, f)
+    }
+}
+
 /// Returned by `ConfigFile::read`. Locks the config for reading and be used to access the config
 /// settings.
 pub struct ConfigReadGuard<'c> {
@@ -158,7 +165,7 @@ impl<'c> Drop for ConfigWriteGuard<'c> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct ConfigWrapper {
     cfg: ConfigSettings,
     file_name: PathBuf,

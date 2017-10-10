@@ -86,6 +86,18 @@ impl<UID: Uid> Service<UID> {
         .map_err(CrustError::NatError)
         .into_boxed()
     }
+
+    pub fn connect(
+        &self,
+        our_info: PrivConnectionInfo<UID>,
+        their_info: PubConnectionInfo<UID>,
+    ) -> BoxFuture<Peer<UID>, ConnectError> {
+        self.acceptor.connect(
+            self.config.network_name_hash(),
+            our_info,
+            their_info,
+        )
+    }
 }
 
 /*
@@ -94,39 +106,17 @@ impl Config {
 }
 
 impl Service {
-    pub fn new(our_uid: UID) -> impl Future<Item=Service>;
-    pub fn with_config(config: ConfigFile, our_uid: UID) -> impl Future<Item=Service>;
-
-    pub fn accept_bootstrap(&self) -> impl Future<Item=BootstrapAcceptor>;
-
     pub fn service_discovery_listener(&self) -> impl Future<Item=ServiceDiscoveryListener>;
 
     pub fn config(&self) -> &ConfigFile;
-
-    pub fn start_bootstrap(&mut self, ...) -> impl Future<BootstrapConnect>;
-
-    pub fn start_listener(...) -> impl Future<Listener>;
-
-    pub fn prepare_connection_info(...) -> impl Future<ConnectionInfo>;
 }
 
 impl Stream for BootstrapAcceptor {
     Item = Peer;
 }
 
-
 impl Peer {
     pub fn ip(&self) -> IpAddr;
-}
-
-impl Stream,Sink for Peer;
-
-impl Listener {
-    pub fn port(&self) -> u16;
-}
-
-impl OurConnectionInfo {
-    pub fn connect(...) -> impl Future<Item=Peer>;
 }
 */
 

@@ -5,6 +5,7 @@ use log::LogLevel;
 use net::listener::SocketIncoming;
 use net::peer::connect::handshake_message::{HandshakeMessage, BootstrapRequest, ConnectRequest};
 use net::peer::connect::BootstrapAcceptor;
+use net::peer::connect::connect::connect;
 use priv_prelude::*;
 
 /// Demultiplexes the incoming stream of connections on the main listener and routes them to either
@@ -58,6 +59,25 @@ impl<UID: Uid> Demux<UID> {
         let mut bootstrap_handler = unwrap!(self.inner.bootstrap_handler.lock());
         *bootstrap_handler = Some(peer_tx);
         acceptor
+    }
+
+    pub fn connect(
+        &self,
+        handle: &Handle,
+        name_hash: NameHash,
+        our_info: PrivConnectionInfo<UID>,
+        their_info: PubConnectionInfo<UID>,
+        config: ConfigFile,
+    ) -> BoxFuture<Peer<UID>, ConnectError> {
+        let their_uid = their_info.id;
+        let peer_rx = {
+            let (peer_tx, peer_rx) = mpsc::unbounded();
+            let mut connection_handler = unwrap!(self.inner.connection_handler.lock());
+            let _ = connection_handler.insert(their_uid, peer_tx);
+            peer_rx
+        };
+
+        connect(handle, name_hash, our_info, their_info, config, peer_rx)
     }
 }
 
