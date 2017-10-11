@@ -1,6 +1,6 @@
 use priv_prelude::*;
 
-use net::{self, Acceptor, Listener};
+use net::{self, Acceptor, Listener, BootstrapAcceptor};
 use net::nat::{self, mapping_context};
 
 pub const SERVICE_DISCOVERY_DEFAULT_PORT: u16 = 5484;
@@ -44,8 +44,16 @@ impl<UID: Uid> Service<UID> {
         })
         .into_boxed()
     }
+    
+    pub fn config(&self) -> ConfigFile {
+        self.config.clone()
+    }
 
-    pub fn bootstrap(&mut self, crust_user: CrustUser) -> BoxFuture<Peer<UID>, BootstrapError> {
+    pub fn bootstrap(
+        &mut self,
+        blacklist: HashSet<SocketAddr>,
+        crust_user: CrustUser,
+    ) -> BoxFuture<Peer<UID>, BootstrapError> {
         let ext_reachability = match crust_user {
             CrustUser::Node => {
                 ExternalReachability::Required {
@@ -59,8 +67,13 @@ impl<UID: Uid> Service<UID> {
             self.our_uid,
             self.config.network_name_hash(),
             ext_reachability,
+            blacklist,
             self.config.clone()
         )
+    }
+
+    pub fn bootstrap_acceptor(&mut self) -> BootstrapAcceptor<UID> {
+        self.acceptor.bootstrap_acceptor()
     }
 
     pub fn start_listener(&self) -> BoxFuture<Listener, CrustError> {
@@ -97,6 +110,14 @@ impl<UID: Uid> Service<UID> {
             our_info,
             their_info,
         )
+    }
+
+    pub fn addresses(&self) -> Vec<SocketAddr> {
+        self.acceptor.addresses()
+    }
+
+    pub fn id(&self) -> UID {
+        self.our_uid
     }
 }
 

@@ -177,7 +177,7 @@ pub fn connect<UID: Uid>(
                 .send((0, HandshakeMessage::ChooseConnection))
                 .map_err(ConnectError::ChooseConnection)
                 .and_then(move |socket| {
-                    peer::from_handshaken_socket(&handle, socket, their_uid)
+                    peer::from_handshaken_socket(&handle, socket, their_uid, CrustUser::Node)
                     .map_err(ConnectError::Io)
                 })
             })
@@ -194,7 +194,7 @@ pub fn connect<UID: Uid>(
                     match msg_opt {
                         None => Err(SingleConnectionError::ConnectionDropped),
                         Some(HandshakeMessage::ChooseConnection) => {
-                            peer::from_handshaken_socket(&handle, socket, their_uid)
+                            peer::from_handshaken_socket(&handle, socket, their_uid, CrustUser::Node)
                             .map_err(SingleConnectionError::Io)
                         },
                         Some(_msg) => Err(SingleConnectionError::UnexpectedMessage),

@@ -1,6 +1,6 @@
 use maidsafe_utilities;
 
-pub use self::event::Event;
+pub use self::event::{Event, ConnectionInfoResult};
 pub use self::service::Service;
 pub use self::event_loop::EventLoop;
 

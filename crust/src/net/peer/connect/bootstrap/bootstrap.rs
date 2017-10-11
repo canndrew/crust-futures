@@ -36,6 +36,7 @@ pub fn bootstrap<UID: Uid>(
     our_uid: UID,
     name_hash: NameHash,
     ext_reachability: ExternalReachability,
+    blacklist: HashSet<SocketAddr>,
     config: ConfigFile,
 ) -> BoxFuture<Peer<UID>, BootstrapError> {
     let handle = handle.clone();
@@ -55,6 +56,9 @@ pub fn bootstrap<UID: Uid>(
 
         Ok(stream::iter_ok(peers)
             .chain(sd_peers)
+            .filter(move |addr| {
+                !blacklist.contains(addr)
+            })
             .map(move |addr| {
                 try_peer(&handle, &addr, our_uid, name_hash, ext_reachability.clone())
                 .map_err(move |e| (addr, e))

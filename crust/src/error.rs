@@ -27,6 +27,15 @@ quick_error! {
             display("Error from NAT library: {}", e)
             from()
         }
+        PeerNotFound {
+            description("The requested peer was not found")
+        }
+        PeerError(e: PeerError) {
+            description("error raised on a peer")
+            display("error raised on a peer: {}", e)
+            cause(e)
+            from()
+        }
     }
 }
 

@@ -107,3 +107,9 @@ impl Stream for SocketIncoming {
     }
 }
 
+impl Listener {
+    pub fn addr(&self) -> SocketAddr {
+        self.local_addr
+    }
+}
+

@@ -7,7 +7,7 @@ use priv_prelude::*;
 
 use error::CrustError;
 use compat::CrustEventSender;
-use compat::service::ServiceCommand;
+use compat::service::{ServiceCommand, ServiceState, FnBox};
 
 pub struct EventLoop<UID: Uid> {
     tx: UnboundedSender<ServiceCommand<UID>>,
@@ -41,19 +41,19 @@ pub fn spawn_event_loop<UID: Uid>(
 
             let service = core.run(::Service::with_config(&handle, config, our_uid))?;
 
-            let (tx, rx) = mpsc::unbounded();
-            let event_loop_impl = EventLoopImpl {
-                service,
-                rx,
-                event_tx,
-            };
-            Ok((core, event_loop_impl, tx))
+            let service_state = ServiceState::new(service, event_tx);
+
+            Ok((core, service_state))
         };
 
         match try() {
-            Ok((mut core, event_loop_impl, tx)) => {
+            Ok((mut core, mut service_state)) => {
+                let handle = core.handle();
+                let (tx, rx) = mpsc::unbounded::<ServiceCommand<UID>>();
                 unwrap!(result_tx.send(Ok(tx)));
-                unwrap!(core.run(event_loop_impl));
+                unwrap!(core.run(rx.for_each(move |cb| {
+                    Ok(cb.call_box(&handle, &mut service_state))
+                })))
             },
             Err(e) => {
                 unwrap!(result_tx.send(Err(e)));
@@ -67,36 +67,5 @@ pub fn spawn_event_loop<UID: Uid>(
         tx: tx,
         _joiner: joiner,
     })
-}
-
-struct EventLoopImpl<UID: Uid> {
-    service: ::Service<UID>,
-    rx: UnboundedReceiver<ServiceCommand<UID>>,
-    event_tx: CrustEventSender<UID>,
-}
-
-impl<UID: Uid> Future for EventLoopImpl<UID> {
-    type Item = ();
-    type Error = Void;
-
-    fn poll(&mut self) -> Result<Async<()>, Void> {
-        loop {
-            match self.rx.poll() {
-                Ok(Async::Ready(Some(command))) => self.run(command),
-                Ok(Async::Ready(None)) => return Ok(Async::Ready(())),
-                Ok(Async::NotReady) => break,
-                Err(()) => unreachable!(),
-            }
-        }
-        Ok(Async::NotReady)
-    }
-}
-
-impl<UID: Uid> EventLoopImpl<UID> {
-    fn run(&mut self, command: ServiceCommand<UID>) {
-        match command {
-            ServiceCommand::Zoom(v, _) => match v {},
-        }
-    }
 }
 

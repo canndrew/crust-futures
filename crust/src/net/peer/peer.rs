@@ -17,6 +17,7 @@ const HEARTBEAT_PERIOD_MS: u64 = 300;
 /// A connection to a remote peer.
 pub struct Peer<UID: Uid> {
     their_uid: UID,
+    kind: CrustUser,
     socket: Socket<PeerMessage>,
     send_heartbeat_timeout: Timeout,
     recv_heartbeat_timeout: Timeout,
@@ -62,10 +63,12 @@ pub fn from_handshaken_socket<UID: Uid, M: 'static>(
     handle: &Handle,
     socket: Socket<M>,
     their_uid: UID,
+    kind: CrustUser,
 ) -> io::Result<Peer<UID>> {
     Ok(Peer {
         socket: socket.change_message_type(),
         their_uid: their_uid,
+        kind: kind,
         send_heartbeat_timeout: Timeout::new(Duration::from_millis(HEARTBEAT_PERIOD_MS), handle)?,
         recv_heartbeat_timeout: Timeout::new(Duration::from_millis(INACTIVITY_TIMEOUT_MS), handle)?,
     })
@@ -74,6 +77,18 @@ pub fn from_handshaken_socket<UID: Uid, M: 'static>(
 impl<UID: Uid> Peer<UID> {
     pub fn addr(&self) -> Result<SocketAddr, PeerError> {
         Ok(self.socket.peer_addr()?)
+    }
+
+    pub fn uid(&self) -> UID {
+        self.their_uid
+    }
+
+    pub fn kind(&self) -> CrustUser {
+        self.kind
+    }
+
+    pub fn ip(&self) -> Result<IpAddr, PeerError> {
+        Ok(self.socket.peer_addr().map(|a| a.ip())?)
     }
 }
 

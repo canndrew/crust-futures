@@ -1,16 +1,16 @@
 use std::{io, mem};
 use std::net::{SocketAddr, SocketAddrV4, Ipv4Addr};
-use std::marker::PhantomData;
 use tokio_core::reactor::Handle;
 use tokio_core::net::{UdpSocket, UdpFramed};
 use tokio_utils::SerdeUdpCodec;
 use futures::stream::StreamFuture;
 use futures::sink;
 use futures::{Async, Future, Stream, Sink};
-use future_utils::{self, DropNotify, FutureExt};
+use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
+use future_utils::FutureExt;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
-use void::{self, Void};
+use void::Void;
 
 use msg::DiscoveryMsg;
 
@@ -18,14 +18,14 @@ pub struct Server<T>
 where
     T: Serialize + DeserializeOwned + Clone + 'static
 {
-    _ph: PhantomData<T>,
-    _drop_notify: DropNotify,
+    data_tx: UnboundedSender<T>,
 }
 
 struct ServerTask<T>
 where
     T: Serialize + DeserializeOwned + Clone + 'static
 {
+    data_rx: UnboundedReceiver<T>,
     data: T,
     state: ServerTaskState<T>,
 }
@@ -56,45 +56,45 @@ where
         let socket = UdpSocket::bind(&bind_addr, handle)?;
         let framed = socket.framed(SerdeUdpCodec::new());
 
-        let (drop_notify, drop_notice) = future_utils::drop_notify();
+        let (data_tx, data_rx) = mpsc::unbounded();
 
         let state = ServerTaskState::Reading {
             reading: framed.into_future(),
         };
         let server_task = ServerTask {
-            data: data,
-            state: state,
+            data_rx,
+            data,
+            state,
         };
-        let server = server_task
-            .until(drop_notice)
-            .map(|opt| match opt {
-                Some(v) => void::unreachable(v),
-                None => (),
-            })
-            .map_err(|v| void::unreachable(v));
-        handle.spawn(server);
+        handle.spawn(server_task.infallible());
 
         let server_ctl = Server {
-            _ph: PhantomData,
-            _drop_notify: drop_notify,
+            data_tx,
         };
         Ok(server_ctl)
     }
 
-    /*
-    pub fn swap_data(&mut self, data: T) -> T {
+    pub fn set_data(&mut self, data: T) {
+        unwrap!(self.data_tx.unbounded_send(data));
     }
-    */
 }
 
 impl<T> Future for ServerTask<T>
 where
     T: Serialize + DeserializeOwned + Clone + 'static
 {
-    type Item = Void;
+    type Item = ();
     type Error = Void;
 
-    fn poll(&mut self) -> Result<Async<Void>, Void> {
+    fn poll(&mut self) -> Result<Async<()>, Void> {
+        loop {
+            match self.data_rx.poll().map_err(|()| unreachable!())? {
+                Async::Ready(Some(data)) => self.data = data,
+                Async::Ready(None) => return Ok(Async::Ready(())),
+                Async::NotReady => break,
+            }
+        }
+
         let mut state = mem::replace(&mut self.state, ServerTaskState::Invalid);
         loop {
             match state {
@@ -133,6 +133,7 @@ where
             }
         }
         self.state = state;
+
         Ok(Async::NotReady)
     }
 }

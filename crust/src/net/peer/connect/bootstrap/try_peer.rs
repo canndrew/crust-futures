@@ -111,7 +111,7 @@ pub fn bootstrap_connect_handshake<UID: Uid>(
             .and_then(move |(msg_opt, socket)| {
                 match msg_opt {
                     Some(HandshakeMessage::BootstrapGranted(peer_uid)) => {
-                        peer::from_handshaken_socket(&handle, socket, peer_uid)
+                        peer::from_handshaken_socket(&handle, socket, peer_uid, CrustUser::Node)
                         .map_err(ConnectHandshakeError::from)
                     }
                     Some(HandshakeMessage::BootstrapDenied(reason)) => {

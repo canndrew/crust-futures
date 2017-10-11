@@ -163,7 +163,7 @@ pub fn bootstrap_accept<UID: Uid>(
 
                 if !require_reachability {
                     return Ok(
-                        grant_bootstrap(&handle, socket, our_uid, their_uid)
+                        grant_bootstrap(&handle, socket, our_uid, their_uid, CrustUser::Node)
                         .map_err(BootstrapAcceptError::Socket)
                         .into_boxed()
                     );
@@ -184,7 +184,7 @@ pub fn bootstrap_accept<UID: Uid>(
                     .then(move |res| {
                         match res {
                             Ok(_connection) => {
-                                grant_bootstrap(&handle, socket, our_uid, their_uid)
+                                grant_bootstrap(&handle, socket, our_uid, their_uid, CrustUser::Node)
                                 .map_err(BootstrapAcceptError::Socket)
                                 .into_boxed()
                             },
@@ -217,7 +217,7 @@ pub fn bootstrap_accept<UID: Uid>(
                 }
 
                 Ok(
-                    grant_bootstrap(&handle, socket, our_uid, their_uid)
+                    grant_bootstrap(&handle, socket, our_uid, their_uid, CrustUser::Client)
                     .map_err(BootstrapAcceptError::Socket)
                     .into_boxed()
                 )
@@ -234,11 +234,12 @@ fn grant_bootstrap<UID: Uid>(
     socket: Socket<HandshakeMessage<UID>>,
     our_uid: UID,
     their_uid: UID,
+    kind: CrustUser,
 ) -> BoxFuture<Peer<UID>, SocketError> {
     let handle = handle.clone();
     socket.send((0, HandshakeMessage::BootstrapGranted(our_uid)))
     .and_then(move |socket| {
-        peer::from_handshaken_socket(&handle, socket, their_uid)
+        peer::from_handshaken_socket(&handle, socket, their_uid, kind)
         .map_err(SocketError::Io)
     })
     .into_boxed()
