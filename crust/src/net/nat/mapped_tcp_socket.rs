@@ -9,7 +9,7 @@ use priv_prelude::*;
 pub fn mapped_tcp_socket(
     mc: &MappingContext,
     addr: &SocketAddr,
-) -> BoxFuture<(TcpBuilder, Vec<SocketAddr>), NatError> {
+) -> BoxFuture<(TcpBuilder, HashSet<SocketAddr>), NatError> {
     let try = || -> Result<_, NatError> {
         let socket = util::new_reusably_bound_tcp_socket(addr)?;
         let addr = socket.local_addr()?;
@@ -17,7 +17,7 @@ pub fn mapped_tcp_socket(
         let mut mapped_addrs = mc.ifv4s()
             .iter()
             .map(|ifv4| SocketAddr::V4(SocketAddrV4::new(ifv4.ip(), addr.port())))
-            .collect::<Vec<_>>();
+            .collect::<HashSet<_>>();
 
         let mut mapping_futures = Vec::new();
 

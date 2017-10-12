@@ -1,6 +1,7 @@
+use futures::sync::mpsc::UnboundedReceiver;
 use priv_prelude::*;
 
-use net::{self, Acceptor, Listener, BootstrapAcceptor};
+use net::{self, Acceptor, Listener, BootstrapAcceptor, ServiceDiscovery};
 use net::nat::{self, mapping_context};
 
 pub const SERVICE_DISCOVERY_DEFAULT_PORT: u16 = 5484;
@@ -54,10 +55,11 @@ impl<UID: Uid> Service<UID> {
         blacklist: HashSet<SocketAddr>,
         crust_user: CrustUser,
     ) -> BoxFuture<Peer<UID>, BootstrapError> {
+        let (current_addrs, _) = self.acceptor.addresses();
         let ext_reachability = match crust_user {
             CrustUser::Node => {
                 ExternalReachability::Required {
-                    direct_listeners: self.acceptor.addresses(),
+                    direct_listeners: current_addrs.into_iter().collect(),
                 }
             }
             CrustUser::Client => ExternalReachability::NotRequired,
@@ -86,13 +88,13 @@ impl<UID: Uid> Service<UID> {
 
     pub fn prepare_connection_info(&self) -> BoxFuture<PrivConnectionInfo<UID>, CrustError> {
         let our_uid = self.our_uid;
-        let direct_addrs = self.acceptor.addresses();
+        let (direct_addrs, _) = self.acceptor.addresses();
         nat::mapped_tcp_socket(&self.mc, &addr!("0.0.0.0:0"))
         .map(move |(socket, hole_punch_addrs)| {
             PrivConnectionInfo {
                 id: our_uid,
-                for_direct: direct_addrs,
-                for_hole_punch: hole_punch_addrs,
+                for_direct: direct_addrs.into_iter().collect(),
+                for_hole_punch: hole_punch_addrs.into_iter().collect(),
                 hole_punch_socket: Some(socket),
             }
         })
@@ -112,12 +114,26 @@ impl<UID: Uid> Service<UID> {
         )
     }
 
-    pub fn addresses(&self) -> Vec<SocketAddr> {
+    pub fn start_service_discovery(&self) -> io::Result<ServiceDiscovery> {
+        let (current_addrs, addrs_rx) = self.acceptor.addresses();
+        ServiceDiscovery::new(
+            &self.handle,
+            self.config.clone(),
+            current_addrs,
+            addrs_rx,
+        )
+    }
+
+    pub fn addresses(&self) -> (HashSet<SocketAddr>, UnboundedReceiver<HashSet<SocketAddr>>) {
         self.acceptor.addresses()
     }
 
     pub fn id(&self) -> UID {
         self.our_uid
+    }
+
+    pub fn handle(&self) -> &Handle {
+        &self.handle
     }
 }
 

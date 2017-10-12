@@ -15,10 +15,14 @@
 // Please review the Licences for the specific language governing permissions and limitations
 // relating to use of the SAFE Network Software.
 
+use std;
+use notify::{self, Watcher};
 use config_file_handler::{self, FileHandler};
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
 use tiny_keccak::sha3_256;
+use maidsafe_utilities::thread;
 
 use priv_prelude::*;
 
@@ -31,16 +35,44 @@ pub struct ConfigFile {
 impl ConfigFile {
     /// Open a crust config file with the give file name.
     pub fn open_path(file_name: PathBuf) -> Result<ConfigFile, CrustError> {
+        let thread_name = format!("monitor {:?}", file_name);
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        let mut watcher = notify::watcher(tx, Duration::from_secs(1))?;
+        watcher.watch(
+            &file_name,
+            notify::RecursiveMode::NonRecursive,
+        )?;
+
         let config_wrapper = ConfigWrapper::open(file_name)?;
-        Ok(ConfigFile { inner: Arc::new(RwLock::new(config_wrapper)) })
+        let inner = Arc::new(RwLock::new(config_wrapper));
+        let weak = Arc::downgrade(&inner);
+        thread::named(thread_name, move || {
+            for _event in rx {
+                match weak.upgrade() {
+                    Some(inner) => {
+                        let mut inner = unwrap!(inner.write());
+                        match inner.reload() {
+                            Ok(()) => (),
+                            Err(e) => {
+                                error!("config refresher raised an error: {}", e);
+                                return;
+                            },
+                        }
+                    },
+                    None => return,
+                };
+            }
+            drop(watcher);
+        });
+        Ok(ConfigFile { inner })
     }
 
     /// Open a crust config file with the default file name.
     pub fn open_default() -> Result<ConfigFile, CrustError> {
         let mut name = config_file_handler::exe_file_stem()?;
         name.push(".crust.config");
-        let config_wrapper = ConfigWrapper::open(name.into())?;
-        Ok(ConfigFile { inner: Arc::new(RwLock::new(config_wrapper)) })
+        ConfigFile::open_path(name.into())
     }
 
     /// Lock the config for reading.
@@ -61,14 +93,8 @@ impl ConfigFile {
 
     /// Reload the config file from disc.
     pub fn reload(&self) -> Result<(), CrustError> {
-        let mut current_config = unwrap!(self.inner.write());
-        let file_handler = FileHandler::new(&current_config.file_name, false)?;
-        let new_config = file_handler.read_file()?;
-        let modified = current_config.cfg != new_config;
-        if modified {
-            current_config.cfg = new_config;
-        }
-        Ok(())
+        let mut inner = unwrap!(self.inner.write());
+        inner.reload()
     }
 
     /// Get the full path to the file.
@@ -104,6 +130,13 @@ impl ConfigFile {
         }
 
         res
+    }
+
+    pub fn observe(&self) -> UnboundedReceiver<()> {
+        let (tx, rx) = mpsc::unbounded();
+        let mut inner = unwrap!(self.inner.write());
+        inner.observers.push(tx);
+        rx
     }
 }
 
@@ -169,6 +202,7 @@ impl<'c> Drop for ConfigWriteGuard<'c> {
 struct ConfigWrapper {
     cfg: ConfigSettings,
     file_name: PathBuf,
+    observers: Vec<UnboundedSender<()>>,
 }
 
 impl ConfigWrapper {
@@ -177,7 +211,21 @@ impl ConfigWrapper {
         Ok(ConfigWrapper {
             cfg: config,
             file_name: file_name,
+            observers: Vec::new(),
         })
+    }
+
+    pub fn reload(&mut self) -> Result<(), CrustError> {
+        let file_handler = FileHandler::new(&self.file_name, false)?;
+        let new_config = file_handler.read_file()?;
+        let modified = self.cfg != new_config;
+        if modified {
+            self.cfg = new_config;
+            self.observers.retain(|observer| {
+                observer.unbounded_send(()).is_ok()
+            });
+        }
+        Ok(())
     }
 }
 

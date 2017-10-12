@@ -1,3 +1,4 @@
+use notify;
 use config_file_handler;
 use priv_prelude::*;
 
@@ -33,6 +34,12 @@ quick_error! {
         PeerError(e: PeerError) {
             description("error raised on a peer")
             display("error raised on a peer: {}", e)
+            cause(e)
+            from()
+        }
+        ConfigFileWatcher(e: notify::Error) {
+            description("error starting config file watcher")
+            display("error starting config file watcher: {}", e)
             cause(e)
             from()
         }

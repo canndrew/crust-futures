@@ -17,23 +17,31 @@ pub struct Listener {
 /// A set of listeners.
 pub struct Listeners {
     handle: Handle,
-    listeners_tx: UnboundedSender<(DropNotice, Incoming, Vec<SocketAddr>)>,
-    addresses: Arc<Mutex<Vec<SocketAddr>>>,
+    listeners_tx: UnboundedSender<(DropNotice, Incoming, HashSet<SocketAddr>)>,
+    addresses: Arc<Mutex<Addresses>>,
+}
+
+struct Addresses {
+    current: HashSet<SocketAddr>,
+    observers: Vec<UnboundedSender<HashSet<SocketAddr>>>,
 }
 
 /// Created in tandem with a `Listeners`, represents the incoming stream of connections.
 pub struct SocketIncoming {
     handle: Handle,
-    listeners_rx: UnboundedReceiver<(DropNotice, Incoming, Vec<SocketAddr>)>,
-    listeners: Vec<(DropNotice, Incoming, Vec<SocketAddr>)>,
-    addresses: Arc<Mutex<Vec<SocketAddr>>>,
+    listeners_rx: UnboundedReceiver<(DropNotice, Incoming, HashSet<SocketAddr>)>,
+    listeners: Vec<(DropNotice, Incoming, HashSet<SocketAddr>)>,
+    addresses: Arc<Mutex<Addresses>>,
 }
 
 impl Listeners {
     /// Create an (empty) set of listeners and a handle to its incoming stream of connections.
     pub fn new(handle: &Handle) -> (Listeners, SocketIncoming) {
         let (tx, rx) = mpsc::unbounded();
-        let addresses = Arc::new(Mutex::new(Vec::new()));
+        let addresses = Arc::new(Mutex::new(Addresses {
+            current: HashSet::new(),
+            observers: Vec::new(),
+        }));
         let listeners = Listeners {
             handle: handle.clone(),
             listeners_tx: tx,
@@ -49,8 +57,12 @@ impl Listeners {
     }
 
     /// All known addresses we may be contactable on. Includes global, NAT-mapped addresses.
-    pub fn addresses(&self) -> Vec<SocketAddr> {
-        unwrap!(self.addresses.lock()).clone()
+    /// The channel can be used to be notified when the set of addresses changes.
+    pub fn addresses(&self) -> (HashSet<SocketAddr>, UnboundedReceiver<HashSet<SocketAddr>>) {
+        let (tx, rx) = mpsc::unbounded();
+        let mut addresses = unwrap!(self.addresses.lock());
+        addresses.observers.push(tx);
+        (addresses.current.clone(), rx)
     }
 
     /// Adds a new listener to the set of listeners, listening on the given local address, and
@@ -85,6 +97,13 @@ impl Stream for SocketIncoming {
                 Some(x) => x,
                 None => return Ok(Async::Ready(None)),
             };
+            let mut addresses = unwrap!(self.addresses.lock());
+            let mut current = mem::replace(&mut addresses.current, HashSet::new());
+            current.extend(addrs.iter().cloned());
+            addresses.observers.retain(|observer| {
+                observer.unbounded_send(current.clone()).is_ok()
+            });
+            addresses.current = current;
             self.listeners.push((drop_rx, incoming, addrs));
         }
 
@@ -101,7 +120,14 @@ impl Stream for SocketIncoming {
                     continue;
                 }
             }
-            self.listeners.swap_remove(i);
+            let (_, _, addrs) = self.listeners.swap_remove(i);
+            let mut addresses = unwrap!(self.addresses.lock());
+            let mut current = mem::replace(&mut addresses.current, HashSet::new());
+            current.retain(|addr| !addrs.contains(addr));
+            addresses.observers.retain(|observer| {
+                observer.unbounded_send(current.clone()).is_ok()
+            });
+            addresses.current = current;
         }
         Ok(Async::NotReady)
     }

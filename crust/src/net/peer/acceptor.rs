@@ -1,3 +1,4 @@
+use futures::sync::mpsc::UnboundedReceiver;
 use net::listener::{Listeners, Listener};
 use net::peer::BootstrapAcceptor;
 use net::peer::connect::Demux;
@@ -30,7 +31,7 @@ impl<UID: Uid> Acceptor<UID> {
         }
     }
 
-    pub fn addresses(&self) -> Vec<SocketAddr> {
+    pub fn addresses(&self) -> (HashSet<SocketAddr>, UnboundedReceiver<HashSet<SocketAddr>>) {
         self.listeners.addresses()
     }
 

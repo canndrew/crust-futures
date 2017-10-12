@@ -22,6 +22,7 @@ bytes = "*"
 rand = "*"
 env_logger = "*"
 tiny-keccak = "1.3"
+notify = "*"
 
 future-utils = { path = "../future-utils" }
 net-macros = { path = "../net-macros" }

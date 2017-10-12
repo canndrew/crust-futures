@@ -48,11 +48,10 @@ pub fn spawn_event_loop<UID: Uid>(
 
         match try() {
             Ok((mut core, mut service_state)) => {
-                let handle = core.handle();
                 let (tx, rx) = mpsc::unbounded::<ServiceCommand<UID>>();
                 unwrap!(result_tx.send(Ok(tx)));
                 unwrap!(core.run(rx.for_each(move |cb| {
-                    Ok(cb.call_box(&handle, &mut service_state))
+                    Ok(cb.call_box(&mut service_state))
                 })))
             },
             Err(e) => {

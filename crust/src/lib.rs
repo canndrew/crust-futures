@@ -29,6 +29,7 @@ extern crate service_discovery;
 extern crate rand;
 extern crate env_logger;
 extern crate tiny_keccak;
+extern crate notify;
 
 mod error;
 mod config;
