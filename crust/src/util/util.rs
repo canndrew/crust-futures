@@ -16,8 +16,6 @@
 // relating to use of the SAFE Network Software.
 
 use priv_prelude::*;
-#[cfg(test)]
-use rand::{self, Rng};
 
 pub fn new_reusably_bound_tcp_socket(local_addr: &SocketAddr) -> io::Result<TcpBuilder> {
     let socket = match local_addr.ip() {
@@ -62,15 +60,5 @@ pub fn ipv4_addr_is_global(ipv4: &Ipv4Addr) -> bool {
 pub fn ipv6_addr_is_global(ipv6: &Ipv6Addr) -> bool {
     // TODO(canndrew): This function is incomplete and may return false-positives.
     !(ipv6.is_loopback() || ipv6.is_unspecified())
-}
-
-#[cfg(test)]
-pub fn random_vec(size: usize) -> Vec<u8> {
-    let mut ret = Vec::with_capacity(size);
-    unsafe {
-        ret.set_len(size)
-    };
-    rand::thread_rng().fill_bytes(&mut ret[..]);
-    ret
 }
 

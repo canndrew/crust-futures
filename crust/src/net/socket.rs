@@ -1,3 +1,4 @@
+use std::net::Shutdown;
 use tokio_io::codec::length_delimited::{self, Framed};
 use futures::stream::{SplitStream, SplitSink};
 use futures::sync::mpsc::{self, UnboundedSender, UnboundedReceiver};
@@ -41,15 +42,22 @@ pub struct Socket<M> {
 }
 
 pub struct Inner {
-    stream_rx: SplitStream<Framed<TcpStream>>,
-    write_tx: UnboundedSender<(Priority, BytesMut)>,
+    stream_rx: Option<SplitStream<Framed<TcpStream>>>,
+    write_tx: UnboundedSender<TaskMsg>,
     peer_addr: SocketAddr,
 }
 
+enum TaskMsg {
+    Send(Priority, BytesMut),
+    Shutdown(SplitStream<Framed<TcpStream>>),
+}
+
 struct SocketTask {
-    stream_tx: SplitSink<Framed<TcpStream>>,
+    handle: Handle,
+    stream_rx: Option<SplitStream<Framed<TcpStream>>>,
+    stream_tx: Option<SplitSink<Framed<TcpStream>>>,
     write_queue: BTreeMap<Priority, VecDeque<(Instant, BytesMut)>>,
-    write_rx: UnboundedReceiver<(Priority, BytesMut)>,
+    write_rx: UnboundedReceiver<TaskMsg>,
 }
 
 impl<M: 'static> Socket<M> {
@@ -60,7 +68,9 @@ impl<M: 'static> Socket<M> {
         let (stream_tx, stream_rx) = framed.split();
         let (write_tx, write_rx) = mpsc::unbounded();
         let task = SocketTask {
-            stream_tx: stream_tx,
+            handle: handle.clone(),
+            stream_tx: Some(stream_tx),
+            stream_rx: None,
             write_queue: BTreeMap::new(),
             write_rx: write_rx,
         };
@@ -68,7 +78,7 @@ impl<M: 'static> Socket<M> {
             error!("Socket task failed!: {}", e);
         }));
         let inner = Inner {
-            stream_rx: stream_rx,
+            stream_rx: Some(stream_rx),
             write_tx: write_tx,
             peer_addr: peer_addr,
         };
@@ -93,6 +103,13 @@ impl<M: 'static> Socket<M> {
     }
 }
 
+impl Drop for Inner {
+    fn drop(&mut self) {
+        let stream_rx = unwrap!(self.stream_rx.take());
+        let _ = self.write_tx.unbounded_send(TaskMsg::Shutdown(stream_rx));
+    }
+}
+
 impl<M> Stream for Socket<M>
 where
     M: Serialize + DeserializeOwned
@@ -105,7 +122,7 @@ where
             Some(inner) => inner,
             None => return Err(SocketError::Destroyed),
         };
-        let ret = if let Async::Ready(data_opt) = inner.stream_rx.poll()? {
+        let ret = if let Async::Ready(data_opt) = unwrap!(inner.stream_rx.as_mut()).poll()? {
             let data = match data_opt {
                 Some(data) => data,
                 None => return Err(SocketError::Destroyed),
@@ -138,7 +155,7 @@ where
         let mut data = Vec::with_capacity(1024);
         unwrap!(serialise_into(&msg, &mut data));
         let data = BytesMut::from(data);
-        let _ = inner.write_tx.unbounded_send((priority, data));
+        let _ = inner.write_tx.unbounded_send(TaskMsg::Send(priority, data));
         Ok(AsyncSink::Ready)
     }
 
@@ -153,18 +170,18 @@ impl Future for SocketTask {
 
     fn poll(&mut self) -> io::Result<Async<()>> {
         let now = Instant::now();
-        let socket_dropped = loop {
+        loop {
             match unwrap!(self.write_rx.poll()) {
-                Async::Ready(Some((priority, data))) => {
+                Async::Ready(Some(TaskMsg::Send(priority, data))) => {
                     let queue = self.write_queue.entry(priority).or_insert_with(|| VecDeque::new());
                     queue.push_back((now, data));
                 },
-                Async::Ready(None) => {
-                    break true;
+                Async::Ready(Some(TaskMsg::Shutdown(stream_rx))) => {
+                    self.stream_rx = Some(stream_rx);
+                    break;
                 },
-                Async::NotReady => {
-                    break false;
-                },
+                Async::Ready(None) => break,
+                Async::NotReady => break,
             }
         };
 
@@ -194,7 +211,7 @@ impl Future for SocketTask {
         let mut all_messages_sent = true;
         'outer: for (_, queue) in self.write_queue.iter_mut() {
             while let Some((time, msg)) = queue.pop_front() {
-                match self.stream_tx.start_send(msg)? {
+                match unwrap!(self.stream_tx.as_mut()).start_send(msg)? {
                     AsyncSink::Ready => (),
                     AsyncSink::NotReady(msg) => {
                         queue.push_front((time, msg));
@@ -205,9 +222,21 @@ impl Future for SocketTask {
             }
         }
 
-        if let Async::Ready(()) = self.stream_tx.poll_complete()? {
-            if socket_dropped && all_messages_sent {
-                return Ok(Async::Ready(()));
+        if let Async::Ready(()) = unwrap!(self.stream_tx.as_mut()).poll_complete()? {
+            if all_messages_sent {
+                if let Some(stream_tx) = self.stream_tx.take() {
+                    let stream_rx = unwrap!(self.stream_rx.take());
+                    let tcp_stream = unwrap!(stream_tx.reunite(stream_rx)).into_inner();
+                    tcp_stream.shutdown(Shutdown::Write)?;
+                    let timeout = Timeout::new(Duration::from_secs(1), &self.handle)?;
+                    self.handle.spawn({
+                        future::empty::<Void, io::Error>()
+                        .until(timeout)
+                        .map(move |_| drop(tcp_stream))
+                        .map_err(|e| error!("io error dropping tcp stream: {}", e))
+                    });
+                    return Ok(Async::Ready(()));
+                }
             }
         }
 
@@ -218,22 +247,16 @@ impl Future for SocketTask {
 #[cfg(test)]
 mod test {
     use super::*;
+    use priv_prelude::*;
 
     use tokio_core::reactor::Core;
-    use tokio_core::net::{TcpStream, TcpListener};
-    use futures::{future, stream, Future, Stream, Sink};
-    use void::Void;
     use rand::{self, Rng};
     use env_logger;
 
-    use uid::Uid;
-    use common::{Socket, SocketMessage};
     use util;
 
     #[test]
     fn test_socket() {
-        impl Uid for u64 {}
-
         let _ = env_logger::init();
 
         let mut core = unwrap!(Core::new());
@@ -247,38 +270,44 @@ mod test {
             for _ in 0..num_msgs {
                 let size = rand::thread_rng().gen_range(0, 10000);
                 let data = util::random_vec(size);
-                let msg = SocketMessage::Data(data);
+                let msg = data;
                 msgs.push(msg);
             }
 
-            let msgs_send: Vec<_> = msgs.iter().cloned().map(|m| (1, m)).collect();
+            let msgs_send: Vec<(Priority, Vec<_>)> = msgs.iter().cloned().map(|m| (1, m)).collect();
 
             let handle0 = handle.clone();
             let f0 = TcpStream::connect(&addr, &handle)
                 .map_err(|err| SocketError::from(err))
                 .and_then(move |stream| {
-                    let socket = Socket::<u64>::wrap_tcp(&handle0, stream);
-                    socket.send_all(stream::iter_ok::<_, SocketError>(msgs_send))
-                        .map(|(_, _)| ())
+                    let socket = Socket::<Vec<u8>>::wrap_tcp(&handle0, stream, addr);
+                    socket
+                    .send_all(stream::iter_ok::<_, SocketError>(msgs_send))
+                    .map(|(_, _)| ())
                 });
 
             let handle1 = handle.clone();
-            let f1 = listener.incoming().into_future()
+            let f1 = {
+                listener
+                .incoming()
+                .into_future()
                 .map_err(|(err, _)| SocketError::from(err))
                 .and_then(move |(stream_opt, _)| {
-                    let (stream, _) = unwrap!(stream_opt);
-                    let socket = Socket::<u64>::wrap_tcp(&handle1, stream);
+                    let (stream, addr) = unwrap!(stream_opt);
+                    let socket = Socket::<Vec<u8>>::wrap_tcp(&handle1, stream, addr);
                     socket 
-                        .take(num_msgs as u64)
-                        .collect()
-                        .map(move |msgs_recv| {
-                            assert!(msgs_recv == msgs);
-                        })
-                });
+                    .take(num_msgs as u64)
+                    .collect()
+                    .map(move |msgs_recv| {
+                        assert!(msgs_recv == msgs);
+                    })
+                })
+            };
 
-            f0.join(f1)
-                .and_then(|((), ())| Ok(()))
-                .map_err(|e| panic!(e))
+            f0
+            .join(f1)
+            .and_then(|((), ())| Ok(()))
+            .map_err(|e| panic!(e))
         }));
         unwrap!(res);
     }

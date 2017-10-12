@@ -312,9 +312,11 @@ mod tests {
         let mut target = unwrap!(config_file_handler::current_bin_dir());
         target.push(sample_name);
 
+        println!("copying {:?} => {:?}", source, target);
         let _ = unwrap!(fs::copy(source, target));
 
         let path = PathBuf::from(sample_name);
+        println!("path == {:?}", path);
         let _ = unwrap!(ConfigFile::open_path(path));
     }
 }

@@ -41,6 +41,9 @@ mod net;
 
 mod priv_prelude;
 
+#[cfg(test)]
+mod test;
+
 //pub use config::{Config};
 pub use service::Service;
 

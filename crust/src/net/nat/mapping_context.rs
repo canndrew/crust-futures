@@ -138,7 +138,7 @@ mod tests {
     #[ignore]
     fn igd_gateway_available() {
         let mut core = unwrap!(Core::new());
-        let res = core.run(MappingContext::new()
+        let res = core.run(MappingContext::new(Options::default())
             .and_then(|mc| {
                 assert!(!mc.our_ifv4s.is_empty());
 
@@ -146,12 +146,12 @@ mod tests {
                 let mut non_loopback_found = false;
 
                 for ifv4 in mc.our_ifv4s {
-                    if ifv4.0.is_loopback() {
+                    if ifv4.ip.is_loopback() {
                         loopback_found = true;
-                        assert!(ifv4.1.is_none());
+                        assert!(ifv4.gateway.is_none());
                     } else {
                         non_loopback_found = true;
-                        assert!(ifv4.1.is_some());
+                        assert!(ifv4.gateway.is_some());
                     }
                 }
 

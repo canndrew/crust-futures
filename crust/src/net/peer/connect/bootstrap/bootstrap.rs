@@ -63,7 +63,7 @@ pub fn bootstrap<UID: Uid>(
                 try_peer(&handle, &addr, our_uid, name_hash, ext_reachability.clone())
                 .map_err(move |e| (addr, e))
             })
-            .buffer_unordered(8)
+            .buffer_unordered(64)
             .first_ok()
             .map_err(|errs| BootstrapError::AllPeersFailed(errs.into_iter().collect()))
         )

@@ -137,23 +137,3 @@ impl<UID: Uid> Service<UID> {
     }
 }
 
-/*
-impl Config {
-    pub fn is_peer_hard_coded(&self, UID) -> bool;
-}
-
-impl Service {
-    pub fn service_discovery_listener(&self) -> impl Future<Item=ServiceDiscoveryListener>;
-
-    pub fn config(&self) -> &ConfigFile;
-}
-
-impl Stream for BootstrapAcceptor {
-    Item = Peer;
-}
-
-impl Peer {
-    pub fn ip(&self) -> IpAddr;
-}
-*/
-
