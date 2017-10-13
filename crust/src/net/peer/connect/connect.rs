@@ -99,7 +99,7 @@ pub fn connect<UID: Uid>(
                     .map(move |socket| (socket, their_uid))
                 })
             })
-            .buffer_unordered(1)
+            .and_then(|f| f)
         };
 
         let mut their_direct = their_info.for_direct;

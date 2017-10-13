@@ -82,14 +82,14 @@ impl<UID: Uid> Service<UID> {
         let port = self.config.read().tcp_acceptor_port.unwrap_or(0);
         let addr = SocketAddr::new(ip!("0.0.0.0"), port);
         self.acceptor.listener(&addr, &self.mc)
-            .map_err(CrustError::NatError)
+            .map_err(CrustError::StartListener)
             .into_boxed()
     }
 
     pub fn prepare_connection_info(&self) -> BoxFuture<PrivConnectionInfo<UID>, CrustError> {
         let our_uid = self.our_uid;
         let (direct_addrs, _) = self.acceptor.addresses();
-        nat::mapped_tcp_socket(&self.mc, &addr!("0.0.0.0:0"))
+        nat::mapped_tcp_socket::<UID>(&self.handle, &self.mc, &addr!("0.0.0.0:0"))
         .map(move |(socket, hole_punch_addrs)| {
             PrivConnectionInfo {
                 id: our_uid,
@@ -98,7 +98,7 @@ impl<UID: Uid> Service<UID> {
                 hole_punch_socket: Some(socket),
             }
         })
-        .map_err(CrustError::NatError)
+        .map_err(CrustError::PrepareConnectionInfo)
         .into_boxed()
     }
 

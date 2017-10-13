@@ -30,6 +30,8 @@ extern crate rand;
 extern crate env_logger;
 extern crate tiny_keccak;
 extern crate notify;
+#[macro_use]
+extern crate maplit;
 
 mod error;
 mod config;
@@ -42,7 +44,7 @@ mod net;
 mod priv_prelude;
 
 #[cfg(test)]
-mod test;
+mod tests;
 
 //pub use config::{Config};
 pub use service::Service;

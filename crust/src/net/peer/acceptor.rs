@@ -39,8 +39,8 @@ impl<UID: Uid> Acceptor<UID> {
         &self,
         listen_addr: &SocketAddr,
         mc: &MappingContext,
-    ) -> BoxFuture<Listener, NatError> {
-        self.listeners.listener(listen_addr, mc)
+    ) -> IoFuture<Listener> {
+        self.listeners.listener::<UID>(listen_addr, mc)
     }
 
     pub fn bootstrap_acceptor(&self) -> BootstrapAcceptor<UID> {

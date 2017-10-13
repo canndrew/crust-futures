@@ -16,6 +16,8 @@
 // relating to use of the SAFE Network Software.
 
 use std;
+use std::env;
+use rand;
 use notify::{self, Watcher};
 use config_file_handler::{self, FileHandler};
 use std::ops::{Deref, DerefMut};
@@ -47,7 +49,7 @@ impl ConfigFile {
         let config_wrapper = ConfigWrapper::open(file_name)?;
         let inner = Arc::new(RwLock::new(config_wrapper));
         let weak = Arc::downgrade(&inner);
-        thread::named(thread_name, move || {
+        let joiner = thread::named(thread_name, move || {
             for _event in rx {
                 match weak.upgrade() {
                     Some(inner) => {
@@ -65,14 +67,29 @@ impl ConfigFile {
             }
             drop(watcher);
         });
+        joiner.detach();
         Ok(ConfigFile { inner })
     }
 
     /// Open a crust config file with the default file name.
     pub fn open_default() -> Result<ConfigFile, CrustError> {
+        ConfigFile::open_path(Self::get_default_file_name()?)
+    }
+
+    pub fn get_default_file_name() -> Result<PathBuf, CrustError> {
         let mut name = config_file_handler::exe_file_stem()?;
         name.push(".crust.config");
-        ConfigFile::open_path(name.into())
+        Ok(name.into())
+    }
+
+    pub fn new_temporary() -> Result<ConfigFile, CrustError> {
+        let file_name = format!("{:016x}.crust.config", rand::random::<u64>());
+        let mut path = env::temp_dir();
+        path.push(file_name);
+        let file_handler = FileHandler::<ConfigSettings>::new(&path, true)?;
+        drop(file_handler);
+
+        Self::open_path(path)
     }
 
     /// Lock the config for reading.
@@ -312,11 +329,9 @@ mod tests {
         let mut target = unwrap!(config_file_handler::current_bin_dir());
         target.push(sample_name);
 
-        println!("copying {:?} => {:?}", source, target);
         let _ = unwrap!(fs::copy(source, target));
 
         let path = PathBuf::from(sample_name);
-        println!("path == {:?}", path);
         let _ = unwrap!(ConfigFile::open_path(path));
     }
 }

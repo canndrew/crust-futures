@@ -5,6 +5,9 @@ pub use self::bootstrap_acceptor::{BootstrapAcceptError, BootstrapAcceptor};
 pub use self::connection_info::{PubConnectionInfo, PrivConnectionInfo};
 pub use self::connect::ConnectError;
 pub use self::handshake_message::BootstrapDenyReason;
+pub use self::stun::{stun, StunError};
+
+use self::handshake_message::HandshakeMessage;
 
 mod bootstrap;
 mod connection_info;
@@ -13,4 +16,5 @@ mod demux;
 mod handshake_message;
 mod bootstrap_acceptor;
 mod connect;
+mod stun;
 

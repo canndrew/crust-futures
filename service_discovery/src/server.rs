@@ -18,6 +18,7 @@ pub struct Server<T>
 where
     T: Serialize + DeserializeOwned + Clone + 'static
 {
+    port: u16,
     data_tx: UnboundedSender<T>,
 }
 
@@ -54,6 +55,7 @@ where
     ) -> io::Result<Server<T>> {
         let bind_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), port));
         let socket = UdpSocket::bind(&bind_addr, handle)?;
+        let actual_port = socket.local_addr()?.port();
         let framed = socket.framed(SerdeUdpCodec::new());
 
         let (data_tx, data_rx) = mpsc::unbounded();
@@ -69,6 +71,7 @@ where
         handle.spawn(server_task.infallible());
 
         let server_ctl = Server {
+            port: actual_port,
             data_tx,
         };
         Ok(server_ctl)
@@ -76,6 +79,10 @@ where
 
     pub fn set_data(&mut self, data: T) {
         unwrap!(self.data_tx.unbounded_send(data));
+    }
+
+    pub fn port(&self) -> u16 {
+        self.port
     }
 }
 

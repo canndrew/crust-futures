@@ -1,25 +1,44 @@
 use tokio_igd::PortMappingProtocol;
 use log::LogLevel;
-use util;
 use void;
+use tokio_igd;
 
 use priv_prelude::*;
+use net;
+use util;
+
+quick_error! {
+    #[derive(Debug)]
+    enum MappedTcpSocketError {
+        IgdAddAnyPort(e: tokio_igd::AddAnyPortError) {
+            description("error requesting port mapping from IGD gateway")
+            display("error requesting port mapping from IGD gateway: {}", e)
+            cause(e)
+        }
+        Stun(e: StunError, addr: SocketAddr) {
+            description("error performing psuedo-stun address discovery with peer")
+            display("error performing psuedo-stun address discovery with peer {}. {}", addr, e)
+            cause(e)
+        }
+    }
+}
 
 /// Create a new, mapped tcp socket.
-pub fn mapped_tcp_socket(
+pub fn mapped_tcp_socket<UID: Uid>(
+    handle: &Handle,
     mc: &MappingContext,
     addr: &SocketAddr,
-) -> BoxFuture<(TcpBuilder, HashSet<SocketAddr>), NatError> {
-    let try = || -> Result<_, NatError> {
+) -> BoxFuture<(TcpBuilder, HashSet<SocketAddr>), io::Error> {
+    let try = || -> io::Result<_> {
         let socket = util::new_reusably_bound_tcp_socket(addr)?;
         let addr = socket.local_addr()?;
 
-        let mut mapped_addrs = {
-            mc
-            .ifv4s()
-            .iter()
-            .map(|ifv4| SocketAddr::V4(SocketAddrV4::new(ifv4.ip(), addr.port())))
-            .collect::<HashSet<_>>()
+        let mut mapped_addrs = mc.expand_unspecified_addr(&addr);
+
+        let forced_port = if mc.ifv4s().iter().any(|ifv4| ifv4.force_include_port()) {
+            Some(addr.port())
+        } else {
+            None
         };
 
         let mut mapping_futures = Vec::new();
@@ -38,12 +57,20 @@ pub fn mapped_tcp_socket(
                     "MaidSafeNat",
                 )
                 .map(SocketAddr::V4)
-                .map_err(NatError::IgdAddAnyPort)
+                .map_err(MappedTcpSocketError::IgdAddAnyPort)
+                .into_boxed()
             };
             mapping_futures.push(future);
         }
 
-        // TODO: stun peers, and use force_include_port
+        for peer_stun in mc.peer_stuns().into_iter().cloned() {
+            let future = {
+                net::peer::stun::<UID>(handle, &peer_stun)
+                .map_err(move |e| MappedTcpSocketError::Stun(e, peer_stun))
+                .into_boxed()
+            };
+            mapping_futures.push(future);
+        }
 
         let mapping_futures = stream::futures_unordered(mapping_futures);
         Ok({
@@ -52,6 +79,14 @@ pub fn mapped_tcp_socket(
             .map_err(|v| void::unreachable(v))
             .collect()
             .and_then(move |addrs| {
+                if let Some(port) = forced_port {
+                    mapped_addrs.extend({
+                        addrs
+                        .iter()
+                        .filter(|addr| util::ip_addr_is_global(&addr.ip()))
+                        .map(|addr| SocketAddr::new(addr.ip(), port))
+                    })
+                }
                 mapped_addrs.extend(addrs);
                 Ok((socket, mapped_addrs))
             })
@@ -65,6 +100,7 @@ mod test {
     use super::*;
     use priv_prelude::*;
     use net::nat::mapping_context;
+    use util::UniqueId;
 
     use tokio_core::reactor::Core;
 
@@ -74,13 +110,14 @@ mod test {
         let handle = core.handle();
         let res = core.run({
             MappingContext::new(mapping_context::Options::default())
-            .and_then(|mc| {
-                mapped_tcp_socket(&mc, &addr!("0.0.0.0:0"))
-                .map_err(NatError::from)
-            })
-            .and_then(|(socket, addrs)| {
-                println!("Tcp mapped socket addrs: {:?}", addrs);
-                Ok(())
+            .and_then(move |mc| {
+                let n = mc.ifv4s().len();
+
+                mapped_tcp_socket::<UniqueId>(&handle, &mc, &addr!("0.0.0.0:0"))
+                .map_err(|e| panic!(e))
+                .map(move |(_socket, addrs)| {
+                    assert!(addrs.len() >= n)
+                })
             })
         });
         unwrap!(res);

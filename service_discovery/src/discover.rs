@@ -16,6 +16,7 @@ pub fn discover<T>(handle: &Handle, port: u16) -> io::Result<Discover<T>>
 where
     T: Serialize + DeserializeOwned + Clone + 'static
 {
+
     let bind_addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0));
     let socket = UdpSocket::bind(&bind_addr, handle)?;
     socket.set_broadcast(true)?;

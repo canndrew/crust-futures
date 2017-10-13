@@ -98,6 +98,17 @@ impl MappingContext {
             .into_boxed()
     }
 
+    pub fn expand_unspecified_addr(&self, addr: &SocketAddr) -> HashSet<SocketAddr> {
+        if !addr.ip().is_unspecified() {
+            return hashset!{*addr};
+        }
+
+        self.our_ifv4s
+        .iter()
+        .map(|ifv4| SocketAddr::V4(SocketAddrV4::new(ifv4.ip(), addr.port())))
+        .collect::<HashSet<_>>()
+    }
+
     /// Inform the context about external "STUN" servers. Note that crust does not actually use
     /// STUN but a custom STUN-like protocol.
     pub fn add_peer_stuns<A: IntoIterator<Item = SocketAddr>>(&mut self, stun_addrs: A) {
@@ -113,7 +124,7 @@ impl MappingContext {
     }
 
     /// Iterate over the known servers
-    pub fn peer_stuns(&self) -> &Vec<SocketAddr> {
+    pub fn peer_stuns(&self) -> &[SocketAddr] {
         &self.peer_stuns
     }
 }
@@ -125,6 +136,10 @@ impl Ifv4 {
 
     pub fn gateway(&self) -> Option<&Gateway> {
         self.gateway.as_ref()
+    }
+
+    pub fn force_include_port(&self) -> bool {
+        self.force_include_port
     }
 }
 

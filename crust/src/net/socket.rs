@@ -224,9 +224,9 @@ impl Future for SocketTask {
 
         if let Async::Ready(()) = unwrap!(self.stream_tx.as_mut()).poll_complete()? {
             if all_messages_sent {
-                if let Some(stream_tx) = self.stream_tx.take() {
-                    let stream_rx = unwrap!(self.stream_rx.take());
-                    let tcp_stream = unwrap!(stream_tx.reunite(stream_rx)).into_inner();
+                if let Some(stream_rx) = self.stream_rx.take() {
+                    let stream_tx = unwrap!(self.stream_tx.take());
+                    let tcp_stream = unwrap!(stream_rx.reunite(stream_tx)).into_inner();
                     tcp_stream.shutdown(Shutdown::Write)?;
                     let timeout = Timeout::new(Duration::from_secs(1), &self.handle)?;
                     self.handle.spawn({
@@ -249,15 +249,15 @@ mod test {
     use super::*;
     use priv_prelude::*;
 
+    use env_logger;
     use tokio_core::reactor::Core;
     use rand::{self, Rng};
-    use env_logger;
 
     use util;
 
     #[test]
     fn test_socket() {
-        let _ = env_logger::init();
+        let _logger = env_logger::init();
 
         let mut core = unwrap!(Core::new());
         let handle = core.handle();
