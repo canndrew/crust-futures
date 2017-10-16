@@ -8,6 +8,8 @@ use net::peer::connect::bootstrap::try_peer::try_peer;
 use net::peer::connect::bootstrap::cache::Cache;
 use service;
 
+const BOOTSTRAP_TIMEOUT_SEC: u64 = 10;
+
 quick_error! {
     /// Error returned when bootstrapping fails.
     #[derive(Debug)]
@@ -15,11 +17,13 @@ quick_error! {
         ReadCache(e: config_file_handler::Error)  {
             description("Error reading bootstrap cache")
             display("Error reading bootstrap cache: {}", e)
+            cause(e)
             from()
         }
         ServiceDiscovery(e: io::Error) {
             description("IO error using service discovery")
             display("IO error using service discovery: {}", e)
+            cause(e)
         }
         AllPeersFailed(e: HashMap<SocketAddr, TryPeerError>) {
             description("Failed to connect to any bootstrap peer")
@@ -48,11 +52,13 @@ pub fn bootstrap<UID: Uid>(
 
         let sd_port = config.read().service_discovery_port
             .unwrap_or(service::SERVICE_DISCOVERY_DEFAULT_PORT);
-        let sd_peers = service_discovery::discover::<Vec<SocketAddr>>(&handle, sd_port)
+        let sd_peers = {
+            service_discovery::discover::<Vec<SocketAddr>>(&handle, sd_port)
             .map_err(BootstrapError::ServiceDiscovery)?
             .infallible::<(SocketAddr, TryPeerError)>()
             .map(|(_, v)| stream::iter_ok(v))
-            .flatten();
+            .flatten()
+        };
 
         Ok(stream::iter_ok(peers)
             .chain(sd_peers)

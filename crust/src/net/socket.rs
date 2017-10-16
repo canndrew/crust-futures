@@ -62,8 +62,9 @@ struct SocketTask {
 
 impl<M: 'static> Socket<M> {
     pub fn wrap_tcp(handle: &Handle, stream: TcpStream, peer_addr: SocketAddr) -> Socket<M> {
+        const MAX_HEADER_SIZE: usize = 8;
         let framed = length_delimited::Builder::new()
-            .max_frame_length(MAX_PAYLOAD_SIZE)
+            .max_frame_length(MAX_PAYLOAD_SIZE + MAX_HEADER_SIZE)
             .new_framed(stream);
         let (stream_tx, stream_rx) = framed.split();
         let (write_tx, write_rx) = mpsc::unbounded();
@@ -152,9 +153,11 @@ where
             Some(ref mut inner) => inner,
             None => return Err(SocketError::Destroyed),
         };
-        let mut data = Vec::with_capacity(1024);
+        let mut data = Vec::with_capacity(MAX_PAYLOAD_SIZE);
         unwrap!(serialise_into(&msg, &mut data));
+        data.shrink_to_fit();
         let data = BytesMut::from(data);
+        println!("sending data of len {} to task for queueing", data.len());
         let _ = inner.write_tx.unbounded_send(TaskMsg::Send(priority, data));
         Ok(AsyncSink::Ready)
     }
@@ -174,6 +177,7 @@ impl Future for SocketTask {
             match unwrap!(self.write_rx.poll()) {
                 Async::Ready(Some(TaskMsg::Send(priority, data))) => {
                     let queue = self.write_queue.entry(priority).or_insert_with(|| VecDeque::new());
+                    println!("receiving msg of size {} into queue!", data.len());
                     queue.push_back((now, data));
                 },
                 Async::Ready(Some(TaskMsg::Shutdown(stream_rx))) => {
@@ -211,6 +215,8 @@ impl Future for SocketTask {
         let mut all_messages_sent = true;
         'outer: for (_, queue) in self.write_queue.iter_mut() {
             while let Some((time, msg)) = queue.pop_front() {
+                println!("MAX_PAYLOAD_SIZE == {}", MAX_PAYLOAD_SIZE);
+                println!("message len == {}", msg.len());
                 match unwrap!(self.stream_tx.as_mut()).start_send(msg)? {
                     AsyncSink::Ready => (),
                     AsyncSink::NotReady(msg) => {
@@ -230,10 +236,9 @@ impl Future for SocketTask {
                     tcp_stream.shutdown(Shutdown::Write)?;
                     let timeout = Timeout::new(Duration::from_secs(1), &self.handle)?;
                     self.handle.spawn({
-                        future::empty::<Void, io::Error>()
-                        .until(timeout)
-                        .map(move |_| drop(tcp_stream))
-                        .map_err(|e| error!("io error dropping tcp stream: {}", e))
+                        timeout
+                        .map(move |()| drop(tcp_stream))
+                        .infallible()
                     });
                     return Ok(Async::Ready(()));
                 }

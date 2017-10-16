@@ -8,4 +8,6 @@ tokio-core = "*"
 maidsafe_utilities = "*"
 unwrap = "1.1"
 serde = "*"
+futures = "*"
+void = "1"
 

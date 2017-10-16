@@ -12,13 +12,15 @@ const HEARTBEAT_PERIOD_MS: u64 = 20_000;
 #[cfg(test)]
 pub const INACTIVITY_TIMEOUT_MS: u64 = 900;
 #[cfg(test)]
-const HEARTBEAT_PERIOD_MS: u64 = 300;
+//const HEARTBEAT_PERIOD_MS: u64 = 300
+const HEARTBEAT_PERIOD_MS: u64 = 300_000;
 
 /// A connection to a remote peer.
 pub struct Peer<UID: Uid> {
     their_uid: UID,
     kind: CrustUser,
     socket: Socket<PeerMessage>,
+    last_send_time: Instant,
     send_heartbeat_timeout: Timeout,
     recv_heartbeat_timeout: Timeout,
 }
@@ -65,12 +67,14 @@ pub fn from_handshaken_socket<UID: Uid, M: 'static>(
     their_uid: UID,
     kind: CrustUser,
 ) -> io::Result<Peer<UID>> {
+    let now = Instant::now();
     Ok(Peer {
         socket: socket.change_message_type(),
         their_uid: their_uid,
         kind: kind,
-        send_heartbeat_timeout: Timeout::new(Duration::from_millis(HEARTBEAT_PERIOD_MS), handle)?,
-        recv_heartbeat_timeout: Timeout::new(Duration::from_millis(INACTIVITY_TIMEOUT_MS), handle)?,
+        last_send_time: now,
+        send_heartbeat_timeout: Timeout::new_at(now + Duration::from_millis(HEARTBEAT_PERIOD_MS), handle)?,
+        recv_heartbeat_timeout: Timeout::new_at(now + Duration::from_millis(INACTIVITY_TIMEOUT_MS), handle)?,
     })
 }
 
@@ -97,10 +101,14 @@ impl<UID: Uid> Stream for Peer<UID> {
     type Error = PeerError;
 
     fn poll(&mut self) -> Result<Async<Option<Vec<u8>>>, PeerError> {
-        if let Async::Ready(..) = self.send_heartbeat_timeout.poll().map_err(PeerError::Io)? {
-            let instant = Instant::now() + Duration::from_millis(HEARTBEAT_PERIOD_MS);
-            self.send_heartbeat_timeout.reset(instant);
-            let _ = self.socket.start_send((0, PeerMessage::Heartbeat));
+        let heartbeat_period = Duration::from_millis(HEARTBEAT_PERIOD_MS);
+        let now = Instant::now();
+        while let Async::Ready(..) = self.send_heartbeat_timeout.poll().void_unwrap() {
+            self.send_heartbeat_timeout.reset(self.last_send_time + heartbeat_period);
+            if now - self.last_send_time >= heartbeat_period {
+                self.last_send_time = now;
+                let _ = self.socket.start_send((0, PeerMessage::Heartbeat));
+            }
         }
 
         loop {
@@ -118,7 +126,7 @@ impl<UID: Uid> Stream for Peer<UID> {
             }
         }
 
-        if let Async::Ready(..) = self.recv_heartbeat_timeout.poll().map_err(PeerError::Io)? {
+        if let Async::Ready(..) = self.recv_heartbeat_timeout.poll().void_unwrap() {
             return Err(PeerError::InactivityTimeout);
         }
 
@@ -135,7 +143,10 @@ impl<UID: Uid> Sink for Peer<UID> {
         (priority, data): (Priority, Vec<u8>),
     ) -> Result<AsyncSink<(Priority, Vec<u8>)>, PeerError> {
         match self.socket.start_send((priority, PeerMessage::Data(data)))? {
-            AsyncSink::Ready => Ok(AsyncSink::Ready),
+            AsyncSink::Ready => {
+                self.last_send_time = Instant::now();
+                Ok(AsyncSink::Ready)
+            },
             AsyncSink::NotReady((priority, PeerMessage::Data(v))) => Ok(AsyncSink::NotReady((priority, v))),
             AsyncSink::NotReady(..) => unreachable!(),
         }

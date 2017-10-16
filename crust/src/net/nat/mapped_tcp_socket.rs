@@ -72,10 +72,12 @@ pub fn mapped_tcp_socket<UID: Uid>(
             mapping_futures.push(future);
         }
 
+        let timeout = Timeout::new(Duration::from_secs(3), handle)?;
         let mapping_futures = stream::futures_unordered(mapping_futures);
         Ok({
             mapping_futures
             .log_errors(LogLevel::Info, "mapping tcp socket")
+            .until(timeout)
             .map_err(|v| void::unreachable(v))
             .collect()
             .and_then(move |addrs| {

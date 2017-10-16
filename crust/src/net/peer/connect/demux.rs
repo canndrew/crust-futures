@@ -6,6 +6,7 @@ use net::listener::SocketIncoming;
 use net::peer::connect::handshake_message::{HandshakeMessage, BootstrapRequest, ConnectRequest};
 use net::peer::connect::BootstrapAcceptor;
 use net::peer::connect::connect::connect;
+use net::peer::connect::stun;
 use priv_prelude::*;
 
 /// Demultiplexes the incoming stream of connections on the main listener and routes them to either
@@ -30,13 +31,14 @@ impl<UID: Uid> Demux<UID> {
             connection_handler: Mutex::new(HashMap::new()),
         });
         let inner_cloned = inner.clone();
-        let handle = handle.clone();
+        let handle0 = handle.clone();
         let handler_task = {
             incoming
             .log_errors(LogLevel::Error, "listener errored!")
             .map(move |socket| {
                 let socket = socket.change_message_type::<HandshakeMessage<UID>>();
-                handle_incoming(inner_cloned.clone(), socket)
+
+                handle_incoming(&handle0, inner_cloned.clone(), socket)
                 .log_error(LogLevel::Debug, "handling incoming connection")
             })
             .buffer_unordered(128)
@@ -81,17 +83,44 @@ impl<UID: Uid> Demux<UID> {
     }
 }
 
+quick_error! {
+    #[derive(Debug)]
+    pub enum IncomingError {
+        TimedOut {
+            description("timed out waiting for the peer to send their request")
+        }
+        Socket(e: SocketError) {
+            description("error on the socket")
+            display("error on the socket: {}", e)
+            cause(e)
+        }
+        UnexpectedMessage {
+            description("the peer sent an unexpected message type")
+        }
+        Disconnected {
+            description("the remote peer disconnected")
+        }
+        TimerIo(e: io::Error) {
+            description("io error creating tokio timer")
+            display("io error creating tokio timer: {}", e)
+            cause(e)
+        }
+    }
+}
+
 fn handle_incoming<UID: Uid>(
+    handle: &Handle,
     inner: Arc<DemuxInner<UID>>,
     socket: Socket<HandshakeMessage<UID>>,
-) -> BoxFuture<(), SocketError> {
+) -> BoxFuture<(), IncomingError> {
     socket
     .into_future()
-    .map_err(|(e, _s)| e)
-    .map(move |(msg_opt, socket)| {
+    .map_err(|(e, _s)| IncomingError::Socket(e))
+    .with_timeout(&handle, Duration::from_secs(10), IncomingError::TimedOut)
+    .and_then(move |(msg_opt, socket)| {
         let msg = match msg_opt {
             Some(msg) => msg,
-            None => return,
+            None => return future::err(IncomingError::Disconnected).into_boxed(),
         };
         match msg {
             HandshakeMessage::BootstrapRequest(bootstrap_request) => {
@@ -99,8 +128,21 @@ fn handle_incoming<UID: Uid>(
                 if let Some(ref bootstrap_handler) = bootstrap_handler_opt.as_ref() {
                     let _ = bootstrap_handler.unbounded_send((socket, bootstrap_request));
                 }
+                future::ok(()).into_boxed()
             },
-            _ => (),
+            HandshakeMessage::Connect(connect_request) => {
+                let connection_handler_map = unwrap!(inner.connection_handler.lock());
+                if let Some(ref connection_handler) = connection_handler_map.get(&connect_request.uid) {
+                    let _ = connection_handler.unbounded_send((socket, connect_request));
+                }
+                future::ok(()).into_boxed()
+            },
+            HandshakeMessage::EchoAddrReq => {
+                stun::stun_respond(socket)
+                .map_err(IncomingError::Socket)
+                .into_boxed()
+            },
+            _ => future::err(IncomingError::UnexpectedMessage).into_boxed(),
         }
     })
     .into_boxed()

@@ -225,13 +225,16 @@ impl<UID: Uid> Service<UID> {
                 return;
             }
 
+            let event_tx = state.event_tx.clone();
             let (drop_tx, drop_rx) = future_utils::drop_notify();
             state.tcp_listener = Some(drop_tx);
             let f = {
                 state.service
                 .start_listener()
                 .map_err(|e| error!("failed to start listener: {}", e))
-                .and_then(|listener| {
+                .and_then(move |listener| {
+                    let port = listener.addr().port();
+                    let _ = event_tx.send(Event::ListenerStarted(port));
                     future::empty::<(), ()>()
                     .map(move |()| drop(listener))
                 })

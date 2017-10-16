@@ -2,8 +2,19 @@ use priv_prelude::*;
 
 use rand::{self, Rng};
 
-pub type UniqueId = [u8; 20];
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Rand)]
+pub struct UniqueId(pub [u8; 20]);
 impl Uid for UniqueId {}
+
+impl fmt::Display for UniqueId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let UniqueId(ref id) = *self;
+        for byte in id {
+            write!(f, "{:02x}", byte)?;
+        }
+        Ok(())
+    }
+}
 
 pub fn random_id() -> UniqueId {
     rand::thread_rng().gen()

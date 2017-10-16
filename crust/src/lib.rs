@@ -16,6 +16,7 @@ extern crate tokio_core;
 extern crate tokio_io;
 extern crate futures;
 extern crate future_utils;
+extern crate tokio_utils;
 extern crate net2;
 #[macro_use]
 extern crate net_macros;
@@ -27,11 +28,15 @@ extern crate void;
 extern crate bytes;
 extern crate service_discovery;
 extern crate rand;
+#[macro_use]
+extern crate rand_derive;
 extern crate env_logger;
 extern crate tiny_keccak;
 extern crate notify;
 #[macro_use]
 extern crate maplit;
+
+pub use net::MAX_PAYLOAD_SIZE;
 
 mod error;
 mod config;

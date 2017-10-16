@@ -7,12 +7,13 @@ pub use std::path::{Path, PathBuf};
 pub use std::time::{Duration, Instant};
 pub use futures::{future, stream, Async, AsyncSink, Future, Stream, Sink};
 pub use future_utils::{FutureExt, StreamExt, BoxFuture, BoxStream, IoFuture, IoStream};
-pub use tokio_core::reactor::{Handle, Timeout};
+pub use tokio_utils::{FutureExt as TokioUtilsFutureExt, Timeout};
+pub use tokio_core::reactor::Handle;
 pub use tokio_core::net::{TcpStream, TcpListener};
 pub use serde::Serialize;
 pub use serde::de::DeserializeOwned;
 pub use net2::TcpBuilder;
-pub use void::Void;
+pub use void::{Void, ResultVoidExt};
 
 pub use net::Uid;
 pub use config::ConfigFile;

@@ -20,6 +20,14 @@ quick_error! {
             display("error on the socket: {}", e)
             cause(e)
         }
+        TimerIo(e: io::Error) {
+            description("io error creating tokio timer")
+            display("io error creating tokio timer: {}", e)
+            cause(e)
+        }
+        TimedOut {
+            description("operation timed out")
+        }
     }
 }
 
@@ -27,11 +35,11 @@ pub fn stun<UID: Uid>(
     handle: &Handle,
     peer_addr: &SocketAddr,
 ) -> BoxFuture<SocketAddr, StunError> {
-    let handle = handle.clone();
+    let handle0 = handle.clone();
     let peer_addr = *peer_addr;
     TcpStream::connect(&peer_addr, &handle)
     .map_err(|e| StunError::Connect(e))
-    .map(move |stream| Socket::<HandshakeMessage<UID>>::wrap_tcp(&handle, stream, peer_addr))
+    .map(move |stream| Socket::<HandshakeMessage<UID>>::wrap_tcp(&handle0, stream, peer_addr))
     .and_then(|socket| {
         socket
         .send((0, HandshakeMessage::EchoAddrReq))
@@ -49,6 +57,20 @@ pub fn stun<UID: Uid>(
             }
         })
     })
+    .with_timeout(handle, Duration::from_secs(3), StunError::TimedOut)
+    .into_boxed()
+}
+
+pub fn stun_respond<UID: Uid>(
+    socket: Socket<HandshakeMessage<UID>>,
+) -> BoxFuture<(), SocketError> {
+    let addr = match socket.peer_addr() {
+        Ok(addr) => addr,
+        Err(e) => return future::err(e).into_boxed(),
+    };
+
+    socket.send((0, HandshakeMessage::EchoAddrResp(addr)))
+    .map(|_s| ())
     .into_boxed()
 }
 

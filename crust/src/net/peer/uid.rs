@@ -6,6 +6,7 @@ pub trait Uid
     : 'static
     + Send
     + fmt::Debug
+    + fmt::Display
     + Clone
     + Copy
     + Eq

@@ -110,7 +110,7 @@ impl<UID: Uid> Stream for BootstrapAcceptor<UID> {
 /// Construct a `Peer` by finishing a bootstrap accept handshake on a socket.
 /// The initial `BootstrapRequest` message sent by the peer has already been read from the
 /// socket.
-pub fn bootstrap_accept<UID: Uid>(
+fn bootstrap_accept<UID: Uid>(
     handle: &Handle,
     socket: Socket<HandshakeMessage<UID>>,
     config: ConfigFile,
@@ -173,7 +173,11 @@ pub fn bootstrap_accept<UID: Uid>(
                     direct_listeners
                     .into_iter()
                     .filter(|addr| util::ip_addr_is_global(&addr.ip()))
-                    .map(|addr| TcpStream::connect(&addr, &handle))
+                    .map(|addr| {
+                        TcpStream::connect(&addr, &handle)
+                        .with_timeout(&handle, Duration::from_secs(3), io::ErrorKind::TimedOut.into())
+                        .into_boxed()
+                    })
                     .collect::<Vec<_>>()
                 };
                 let connectors = stream::futures_unordered(connectors);

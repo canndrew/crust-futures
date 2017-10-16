@@ -45,6 +45,9 @@ quick_error! {
         Disconnected {
             description("Disconnected from peer")
         }
+        TimedOut {
+            description("timed out performing handshake")
+        }
     }
 }
 
@@ -70,21 +73,22 @@ pub fn try_peer<UID: Uid>(
     let handle1 = handle.clone();
     let addr = *addr;
     TcpStream::connect(&addr, &handle)
-        .map(move |stream| {
-            Socket::wrap_tcp(&handle0, stream, addr)
-        })
-        .map_err(TryPeerError::Connect)
-        .and_then(move |socket| {
-            bootstrap_connect_handshake(
-                &handle1,
-                socket,
-                our_uid,
-                name_hash,
-                ext_reachability,
-            )
-            .map_err(TryPeerError::Handshake)
-        })
-        .into_boxed()
+    .map(move |stream| {
+        Socket::wrap_tcp(&handle0, stream, addr)
+    })
+    .with_timeout(handle, Duration::from_secs(10), io::ErrorKind::TimedOut.into())
+    .map_err(TryPeerError::Connect)
+    .and_then(move |socket| {
+        bootstrap_connect_handshake(
+            &handle1,
+            socket,
+            our_uid,
+            name_hash,
+            ext_reachability,
+        )
+        .map_err(TryPeerError::Handshake)
+    })
+    .into_boxed()
 }
 
 /// Construct a `Peer` by performing a bootstrap connection handshake on a socket.
@@ -95,7 +99,7 @@ pub fn bootstrap_connect_handshake<UID: Uid>(
     name_hash: NameHash,
     ext_reachability: ExternalReachability,
 ) -> BoxFuture<Peer<UID>, ConnectHandshakeError> {
-    let handle = handle.clone();
+    let handle0 = handle.clone();
     let request = BootstrapRequest {
         uid: our_uid,
         name_hash: name_hash,
@@ -111,7 +115,7 @@ pub fn bootstrap_connect_handshake<UID: Uid>(
             .and_then(move |(msg_opt, socket)| {
                 match msg_opt {
                     Some(HandshakeMessage::BootstrapGranted(peer_uid)) => {
-                        peer::from_handshaken_socket(&handle, socket, peer_uid, CrustUser::Node)
+                        peer::from_handshaken_socket(&handle0, socket, peer_uid, CrustUser::Node)
                         .map_err(ConnectHandshakeError::from)
                     }
                     Some(HandshakeMessage::BootstrapDenied(reason)) => {
@@ -126,6 +130,7 @@ pub fn bootstrap_connect_handshake<UID: Uid>(
                 }
             })
     })
+    .with_timeout(&handle, Duration::from_secs(10), ConnectHandshakeError::TimedOut)
     .into_boxed()
 }
 
