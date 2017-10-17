@@ -10,7 +10,8 @@ pub const INACTIVITY_TIMEOUT_MS: u64 = 120_000;
 const HEARTBEAT_PERIOD_MS: u64 = 20_000;
 
 #[cfg(test)]
-pub const INACTIVITY_TIMEOUT_MS: u64 = 900;
+//pub const INACTIVITY_TIMEOUT_MS: u64 = 900;
+pub const INACTIVITY_TIMEOUT_MS: u64 = 900_000;
 #[cfg(test)]
 //const HEARTBEAT_PERIOD_MS: u64 = 300
 const HEARTBEAT_PERIOD_MS: u64 = 300_000;
@@ -154,6 +155,12 @@ impl<UID: Uid> Sink for Peer<UID> {
 
     fn poll_complete(&mut self) -> Result<Async<()>, PeerError> {
         self.socket.poll_complete().map_err(PeerError::from)
+    }
+}
+
+impl<UID: Uid> Drop for Peer<UID> {
+    fn drop(&mut self) {
+        println!("dropping peer with uid: {}", self.their_uid);
     }
 }
 

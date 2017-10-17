@@ -6,9 +6,24 @@ use compat::{event_loop, EventLoop, CrustEventSender};
 use compat::{Event, ConnectionInfoResult};
 use priv_prelude::*;
 
-#[derive(Clone)]
+//#[derive(Clone)]
 pub struct ConnectionMap<UID: Uid> {
     inner: Arc<Mutex<Inner<UID>>>
+}
+
+impl<UID: Uid> Clone for ConnectionMap<UID> {
+    fn clone(&self) -> ConnectionMap<UID> {
+        println!("cloning connection map");
+        ConnectionMap {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<UID: Uid> Drop for ConnectionMap<UID> {
+    fn drop(&mut self) {
+        println!("dropping connection map");
+    }
 }
 
 struct Inner<UID: Uid> {
@@ -21,6 +36,12 @@ struct PeerWrapper<UID: Uid> {
     addr: SocketAddr,
     kind: CrustUser,
     peer_sink: SplitSink<Peer<UID>>,
+}
+
+impl<UID: Uid> Drop for PeerWrapper<UID> {
+    fn drop(&mut self) {
+        println!("dropping PeerWrapper");
+    }
 }
 
 impl<UID: Uid> ConnectionMap<UID> {
@@ -40,7 +61,7 @@ impl<UID: Uid> ConnectionMap<UID> {
         handle: &Handle,
         peer: Peer<UID>,
         addr: SocketAddr,
-    ) {
+    ) -> bool {
         let cm = self.clone();
         let (drop_tx, drop_rx) = future_utils::drop_notify();
         let uid = peer.uid();
@@ -48,17 +69,23 @@ impl<UID: Uid> ConnectionMap<UID> {
         let (peer_sink, peer_stream) = peer.split();
  
         let mut inner = unwrap!(self.inner.lock());
+        if inner.map.contains_key(&uid) {
+            return false;
+        }
+
+        println!("creating task for {}", uid);
         let event_tx0 = inner.event_tx.clone();
         let event_tx1 = inner.event_tx.clone();
         handle.spawn({
             peer_stream
             .log_errors(LogLevel::Info, "receiving data from peer")
-            .until(drop_rx)
+            .until(drop_rx.map(|()| println!("drop_rx saw the drop")))
             .for_each(move |msg| {
                 let _ = event_tx0.send(Event::NewMessage(uid, kind, msg));
                 Ok(())
             })
             .map(move |()| {
+                println!("dropping {}", uid);
                 let _ = cm.remove(&uid);
                 let _ = event_tx1.send(Event::LostPeer(uid));
             })
@@ -73,6 +100,7 @@ impl<UID: Uid> ConnectionMap<UID> {
         };
 
         let _ = inner.map.insert(uid, pw);
+        true
     }
 
     pub fn send(&self, uid: &UID, msg: Vec<u8>, priority: Priority) -> Result<(), CrustError> {
@@ -97,6 +125,7 @@ impl<UID: Uid> ConnectionMap<UID> {
     }
 
     pub fn remove(&self, uid: &UID) -> bool {
+        println!("removing {}", uid);
         let mut inner = unwrap!(self.inner.lock());
         inner.map
         .remove(uid)
@@ -121,6 +150,12 @@ impl<UID: Uid> ConnectionMap<UID> {
                 CrustUser::Client => client_ips.contains(&pw.addr.ip()),
             }
         })
+    }
+
+    pub fn clear(&self) {
+        let mut inner = unwrap!(self.inner.lock());
+        println!("clearing map with keys: {:?}", inner.map.keys().collect::<Vec<_>>());
+        inner.map.clear();
     }
 }
 

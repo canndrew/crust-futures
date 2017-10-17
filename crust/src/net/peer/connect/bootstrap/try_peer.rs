@@ -130,7 +130,7 @@ pub fn bootstrap_connect_handshake<UID: Uid>(
                 }
             })
     })
-    .with_timeout(&handle, Duration::from_secs(10), ConnectHandshakeError::TimedOut)
+    .with_timeout(&handle, Duration::from_secs(9), ConnectHandshakeError::TimedOut)
     .into_boxed()
 }
 

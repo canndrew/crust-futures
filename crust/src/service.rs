@@ -53,6 +53,7 @@ impl<UID: Uid> Service<UID> {
     pub fn bootstrap(
         &mut self,
         blacklist: HashSet<SocketAddr>,
+        use_service_discovery: bool,
         crust_user: CrustUser,
     ) -> BoxFuture<Peer<UID>, BootstrapError> {
         let (current_addrs, _) = self.acceptor.addresses();
@@ -70,6 +71,7 @@ impl<UID: Uid> Service<UID> {
             self.config.network_name_hash(),
             ext_reachability,
             blacklist,
+            use_service_discovery,
             self.config.clone()
         )
     }

@@ -79,8 +79,10 @@ impl<UID: Uid> Service<UID> {
         })
     }
 
-    pub fn start_service_discovery(&mut self) {
-        // service discovery doesn't do anything (except claim the port) until we set it to listen.
+    pub fn start_service_discovery(&self) {
+        self.event_loop.send(Box::new(move |state: &mut ServiceState<UID>| {
+            state.service_discovery_enabled = true;
+        }));
     }
 
     pub fn set_service_discovery_listen(&self, listen: bool) {
@@ -126,8 +128,10 @@ impl<UID: Uid> Service<UID> {
                                     return Ok(());
                                 },
                             };
-                            cm.insert_peer(&handle1, peer, their_addr);
-                            let _ = event_tx.send(Event::BootstrapAccept(their_uid, their_kind));
+                            if cm.insert_peer(&handle1, peer, their_addr) {
+                                println!("bootstrap accepted {} to our cm", their_uid);
+                                let _ = event_tx.send(Event::BootstrapAccept(their_uid, their_kind));
+                            }
                             Ok(())
                         })
                         .infallible()
@@ -178,13 +182,14 @@ impl<UID: Uid> Service<UID> {
     ) -> Result<(), CrustError> {
         self.event_loop.send(Box::new(move |state: &mut ServiceState<UID>| {
             let (drop_tx, drop_rx) = future_utils::drop_notify();
+            let use_service_discovery = state.service_discovery_enabled;
             state.bootstrap_connect = Some(drop_tx);
             let cm = state.cm.clone();
             let event_tx = state.event_tx.clone();
             let f = {
                 let handle = state.service.handle().clone();
                 state.service
-                .bootstrap(blacklist, crust_user)
+                .bootstrap(blacklist, use_service_discovery, crust_user)
                 .map_err(|e| error!("bootstrap failed: {}", e))
                 .and_then(move |peer| {
                     let addr = {
@@ -365,6 +370,7 @@ pub struct ServiceState<UID: Uid> {
     bootstrap_connect: Option<DropNotify>,
     tcp_listener: Option<DropNotify>,
     service_discovery: Option<ServiceDiscovery>,
+    service_discovery_enabled: bool,
 }
 
 impl<UID: Uid> ServiceState<UID> {
@@ -378,7 +384,14 @@ impl<UID: Uid> ServiceState<UID> {
             bootstrap_connect: None,
             tcp_listener: None,
             service_discovery: None,
+            service_discovery_enabled: false,
         }
+    }
+}
+
+impl<UID: Uid> Drop for ServiceState<UID> {
+    fn drop(&mut self) {
+        self.cm.clear()
     }
 }
 

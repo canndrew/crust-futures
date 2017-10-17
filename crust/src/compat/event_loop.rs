@@ -50,9 +50,13 @@ pub fn spawn_event_loop<UID: Uid>(
             Ok((mut core, mut service_state)) => {
                 let (tx, rx) = mpsc::unbounded::<ServiceCommand<UID>>();
                 unwrap!(result_tx.send(Ok(tx)));
-                unwrap!(core.run(rx.for_each(move |cb| {
-                    Ok(cb.call_box(&mut service_state))
-                })))
+                unwrap!(core.run({
+                    rx
+                    .for_each(move |cb| {
+                        Ok(cb.call_box(&mut service_state))
+                    })
+                    .map(|()| println!("exiting event loop"))
+                }));
             },
             Err(e) => {
                 unwrap!(result_tx.send(Err(e)));

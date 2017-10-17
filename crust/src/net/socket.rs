@@ -157,7 +157,6 @@ where
         unwrap!(serialise_into(&msg, &mut data));
         data.shrink_to_fit();
         let data = BytesMut::from(data);
-        println!("sending data of len {} to task for queueing", data.len());
         let _ = inner.write_tx.unbounded_send(TaskMsg::Send(priority, data));
         Ok(AsyncSink::Ready)
     }
@@ -177,7 +176,6 @@ impl Future for SocketTask {
             match unwrap!(self.write_rx.poll()) {
                 Async::Ready(Some(TaskMsg::Send(priority, data))) => {
                     let queue = self.write_queue.entry(priority).or_insert_with(|| VecDeque::new());
-                    println!("receiving msg of size {} into queue!", data.len());
                     queue.push_back((now, data));
                 },
                 Async::Ready(Some(TaskMsg::Shutdown(stream_rx))) => {
@@ -215,8 +213,6 @@ impl Future for SocketTask {
         let mut all_messages_sent = true;
         'outer: for (_, queue) in self.write_queue.iter_mut() {
             while let Some((time, msg)) = queue.pop_front() {
-                println!("MAX_PAYLOAD_SIZE == {}", MAX_PAYLOAD_SIZE);
-                println!("message len == {}", msg.len());
                 match unwrap!(self.stream_tx.as_mut()).start_send(msg)? {
                     AsyncSink::Ready => (),
                     AsyncSink::NotReady(msg) => {

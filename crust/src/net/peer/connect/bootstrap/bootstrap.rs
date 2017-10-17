@@ -29,6 +29,11 @@ quick_error! {
             description("Failed to connect to any bootstrap peer")
             display("Failed to connect to any bootstrap peer, all {} attempts failed. Errors: {:?}", e.len(), e)
         }
+        TimerIo(e: io::Error) {
+            description("io error creating tokio timer")
+            display("io error creating tokio timer: {}", e)
+            cause(e)
+        }
     }
 }
 
@@ -41,6 +46,7 @@ pub fn bootstrap<UID: Uid>(
     name_hash: NameHash,
     ext_reachability: ExternalReachability,
     blacklist: HashSet<SocketAddr>,
+    use_service_discovery: bool,
     config: ConfigFile,
 ) -> BoxFuture<Peer<UID>, BootstrapError> {
     let handle = handle.clone();
@@ -48,18 +54,29 @@ pub fn bootstrap<UID: Uid>(
         let mut peers = Vec::new();
         let mut cache = Cache::new(config.read().bootstrap_cache_name.as_ref().map(|p| p.as_ref()))?;
         peers.extend(cache.read_file());
+        println!("peers from cache: {:?}", peers);
         peers.extend(config.read().hard_coded_contacts.iter().cloned());
+        println!("now with hardcoded contacts: {:?}", peers);
 
-        let sd_port = config.read().service_discovery_port
-            .unwrap_or(service::SERVICE_DISCOVERY_DEFAULT_PORT);
-        let sd_peers = {
+        let sd_peers = if use_service_discovery {
+            let sd_port = config.read().service_discovery_port
+                .unwrap_or(service::SERVICE_DISCOVERY_DEFAULT_PORT);
             service_discovery::discover::<Vec<SocketAddr>>(&handle, sd_port)
             .map_err(BootstrapError::ServiceDiscovery)?
             .infallible::<(SocketAddr, TryPeerError)>()
             .map(|(_, v)| stream::iter_ok(v))
             .flatten()
+            .into_boxed()
+        } else {
+            future::empty().into_stream().into_boxed()
         };
 
+        println!("bootstrap connecting");
+
+        let timeout = {
+            Timeout::new(Duration::from_secs(10), &handle)
+            .map_err(BootstrapError::TimerIo)
+        }?;
         Ok(stream::iter_ok(peers)
             .chain(sd_peers)
             .filter(move |addr| {
@@ -70,8 +87,16 @@ pub fn bootstrap<UID: Uid>(
                 .map_err(move |e| (addr, e))
             })
             .buffer_unordered(64)
+            .until(timeout.infallible())
             .first_ok()
-            .map_err(|errs| BootstrapError::AllPeersFailed(errs.into_iter().collect()))
+            .map_err(|errs| {
+                println!("all peers failed: {:?}", errs);
+                BootstrapError::AllPeersFailed(errs.into_iter().collect())
+            })
+            .map(|x| {
+                println!("bootstrap connected");
+                x
+            })
         )
     };
     future::result(try()).flatten().into_boxed()
