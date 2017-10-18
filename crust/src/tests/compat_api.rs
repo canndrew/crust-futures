@@ -235,11 +235,9 @@ fn bootstrap_using_hard_coded_contacts() {
     bootstrap_and_exchange(&service0, &service1, &event_rx0, &event_rx1, CrustUser::Client);
 
     drop(service1);
-    println!("dropped service1");
     expect_event!(event_rx0, Event::LostPeer(id) => {
         assert_eq!(id, uid1);
     });
-    println!("finished");
 }
 
 #[test]

@@ -6,24 +6,9 @@ use compat::{event_loop, EventLoop, CrustEventSender};
 use compat::{Event, ConnectionInfoResult};
 use priv_prelude::*;
 
-//#[derive(Clone)]
+#[derive(Clone)]
 pub struct ConnectionMap<UID: Uid> {
     inner: Arc<Mutex<Inner<UID>>>
-}
-
-impl<UID: Uid> Clone for ConnectionMap<UID> {
-    fn clone(&self) -> ConnectionMap<UID> {
-        println!("cloning connection map");
-        ConnectionMap {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-impl<UID: Uid> Drop for ConnectionMap<UID> {
-    fn drop(&mut self) {
-        println!("dropping connection map");
-    }
 }
 
 struct Inner<UID: Uid> {
@@ -36,12 +21,6 @@ struct PeerWrapper<UID: Uid> {
     addr: SocketAddr,
     kind: CrustUser,
     peer_sink: SplitSink<Peer<UID>>,
-}
-
-impl<UID: Uid> Drop for PeerWrapper<UID> {
-    fn drop(&mut self) {
-        println!("dropping PeerWrapper");
-    }
 }
 
 impl<UID: Uid> ConnectionMap<UID> {
@@ -73,19 +52,17 @@ impl<UID: Uid> ConnectionMap<UID> {
             return false;
         }
 
-        println!("creating task for {}", uid);
         let event_tx0 = inner.event_tx.clone();
         let event_tx1 = inner.event_tx.clone();
         handle.spawn({
             peer_stream
             .log_errors(LogLevel::Info, "receiving data from peer")
-            .until(drop_rx.map(|()| println!("drop_rx saw the drop")))
+            .until(drop_rx)
             .for_each(move |msg| {
                 let _ = event_tx0.send(Event::NewMessage(uid, kind, msg));
                 Ok(())
             })
             .map(move |()| {
-                println!("dropping {}", uid);
                 let _ = cm.remove(&uid);
                 let _ = event_tx1.send(Event::LostPeer(uid));
             })
@@ -125,7 +102,6 @@ impl<UID: Uid> ConnectionMap<UID> {
     }
 
     pub fn remove(&self, uid: &UID) -> bool {
-        println!("removing {}", uid);
         let mut inner = unwrap!(self.inner.lock());
         inner.map
         .remove(uid)
@@ -154,7 +130,6 @@ impl<UID: Uid> ConnectionMap<UID> {
 
     pub fn clear(&self) {
         let mut inner = unwrap!(self.inner.lock());
-        println!("clearing map with keys: {:?}", inner.map.keys().collect::<Vec<_>>());
         inner.map.clear();
     }
 }

@@ -158,9 +158,3 @@ impl<UID: Uid> Sink for Peer<UID> {
     }
 }
 
-impl<UID: Uid> Drop for Peer<UID> {
-    fn drop(&mut self) {
-        println!("dropping peer with uid: {}", self.their_uid);
-    }
-}
-

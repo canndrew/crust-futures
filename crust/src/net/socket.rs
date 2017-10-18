@@ -75,9 +75,12 @@ impl<M: 'static> Socket<M> {
             write_queue: BTreeMap::new(),
             write_rx: write_rx,
         };
-        handle.spawn(task.map_err(|e| {
-            error!("Socket task failed!: {}", e);
-        }));
+        handle.spawn({
+            task
+            .map_err(|e| {
+                error!("Socket task failed!: {}", e);
+            })
+        });
         let inner = Inner {
             stream_rx: Some(stream_rx),
             write_tx: write_tx,

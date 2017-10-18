@@ -54,9 +54,7 @@ pub fn bootstrap<UID: Uid>(
         let mut peers = Vec::new();
         let mut cache = Cache::new(config.read().bootstrap_cache_name.as_ref().map(|p| p.as_ref()))?;
         peers.extend(cache.read_file());
-        println!("peers from cache: {:?}", peers);
         peers.extend(config.read().hard_coded_contacts.iter().cloned());
-        println!("now with hardcoded contacts: {:?}", peers);
 
         let sd_peers = if use_service_discovery {
             let sd_port = config.read().service_discovery_port
@@ -70,8 +68,6 @@ pub fn bootstrap<UID: Uid>(
         } else {
             future::empty().into_stream().into_boxed()
         };
-
-        println!("bootstrap connecting");
 
         let timeout = {
             Timeout::new(Duration::from_secs(10), &handle)
@@ -90,12 +86,7 @@ pub fn bootstrap<UID: Uid>(
             .until(timeout.infallible())
             .first_ok()
             .map_err(|errs| {
-                println!("all peers failed: {:?}", errs);
                 BootstrapError::AllPeersFailed(errs.into_iter().collect())
-            })
-            .map(|x| {
-                println!("bootstrap connected");
-                x
             })
         )
     };

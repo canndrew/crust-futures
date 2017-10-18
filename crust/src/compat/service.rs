@@ -129,7 +129,6 @@ impl<UID: Uid> Service<UID> {
                                 },
                             };
                             if cm.insert_peer(&handle1, peer, their_addr) {
-                                println!("bootstrap accepted {} to our cm", their_uid);
                                 let _ = event_tx.send(Event::BootstrapAccept(their_uid, their_kind));
                             }
                             Ok(())

@@ -55,7 +55,6 @@ pub fn spawn_event_loop<UID: Uid>(
                     .for_each(move |cb| {
                         Ok(cb.call_box(&mut service_state))
                     })
-                    .map(|()| println!("exiting event loop"))
                 }));
             },
             Err(e) => {
