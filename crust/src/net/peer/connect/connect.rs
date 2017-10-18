@@ -65,6 +65,8 @@ quick_error! {
     }
 }
 
+/// Perform a rendezvous connect to a peer. Both peers call this simultaneously using
+/// `PubConnectionInfo` they received from the other peer out-of-band.
 pub fn connect<UID: Uid>(
     handle: &Handle,
     name_hash: NameHash,

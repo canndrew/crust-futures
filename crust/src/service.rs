@@ -6,6 +6,8 @@ use net::nat::{self, mapping_context};
 
 pub const SERVICE_DISCOVERY_DEFAULT_PORT: u16 = 5484;
 
+
+/// The main entry point to Crust.
 pub struct Service<UID: Uid> {
     handle: Handle,
     config: ConfigFile,
@@ -15,6 +17,7 @@ pub struct Service<UID: Uid> {
 }
 
 impl<UID: Uid> Service<UID> {
+    /// Create a new `Service` with the default config.
     pub fn new(handle: &Handle, our_uid: UID) -> BoxFuture<Service<UID>, CrustError> {
         let try = || -> Result<_, CrustError> {
             Ok(Service::with_config(handle, ConfigFile::open_default()?, our_uid))
@@ -22,6 +25,7 @@ impl<UID: Uid> Service<UID> {
         future::result(try()).flatten().into_boxed()
     }
 
+    /// Create a new `Service` with the given configuration.
     pub fn with_config(
         handle: &Handle,
         config: ConfigFile,
@@ -46,10 +50,12 @@ impl<UID: Uid> Service<UID> {
         .into_boxed()
     }
     
+    /// Get a handle to the service's config file.
     pub fn config(&self) -> ConfigFile {
         self.config.clone()
     }
 
+    /// Bootstrap to the network.
     pub fn bootstrap(
         &mut self,
         blacklist: HashSet<SocketAddr>,
@@ -76,10 +82,16 @@ impl<UID: Uid> Service<UID> {
         )
     }
 
+    /// Start a bootstrap acceptor. The returned `BootstrapAcceptor` can be used to receive peers
+    /// who are bootstrapping to us. It can be dropped again to re-disable accepting bootstrapping
+    /// peers.
     pub fn bootstrap_acceptor(&mut self) -> BootstrapAcceptor<UID> {
         self.acceptor.bootstrap_acceptor()
     }
 
+    /// Start listening on a socket. The address/port to listen on is configured through the
+    /// configuration file, The returned `Listener` can also be queried for the address. Drop the
+    /// `Listener` to stop listening on the address.
     pub fn start_listener(&self) -> BoxFuture<Listener, CrustError> {
         let port = self.config.read().tcp_acceptor_port.unwrap_or(0);
         let addr = SocketAddr::new(ip!("0.0.0.0"), port);
@@ -88,6 +100,11 @@ impl<UID: Uid> Service<UID> {
             .into_boxed()
     }
 
+    /// Prepare a connection info. This is the first step to doing a p2p connection to a peer. Both
+    /// peers must call `prepare_connection_info`, use the returned `PrivConnectionInfo` to
+    /// generate a `PubConnectionInfo`, trade `PubConnectionInfo`s using some out-of-channel, then
+    /// call connect simultaneously using each other's `PubConnectionInfo` and their own
+    /// `PrivConnectionInfo`.
     pub fn prepare_connection_info(&self) -> BoxFuture<PrivConnectionInfo<UID>, CrustError> {
         let our_uid = self.our_uid;
         let (direct_addrs, _) = self.acceptor.addresses();
@@ -104,6 +121,8 @@ impl<UID: Uid> Service<UID> {
         .into_boxed()
     }
 
+    /// Perform a p2p connection to a peer. You must generate connection info first using
+    /// `prepare_connection_info`.
     pub fn connect(
         &self,
         our_info: PrivConnectionInfo<UID>,
@@ -116,6 +135,8 @@ impl<UID: Uid> Service<UID> {
         )
     }
 
+    /// The returned `ServiceDiscovery` advertises the existence of this peer to any other peers on
+    /// the local network (via udp broadcast).
     pub fn start_service_discovery(&self) -> io::Result<ServiceDiscovery> {
         let (current_addrs, addrs_rx) = self.acceptor.addresses();
         ServiceDiscovery::new(
@@ -126,14 +147,18 @@ impl<UID: Uid> Service<UID> {
         )
     }
 
+    /// Return the set of all addresses that we are currently listening for incoming connections
+    /// on. Also returns a channel that can be used to monitor when this set changes.
     pub fn addresses(&self) -> (HashSet<SocketAddr>, UnboundedReceiver<HashSet<SocketAddr>>) {
         self.acceptor.addresses()
     }
 
+    /// Get our ID.
     pub fn id(&self) -> UID {
         self.our_uid
     }
 
+    /// Get the tokio `Handle` that this service is using.
     pub fn handle(&self) -> &Handle {
         &self.handle
     }

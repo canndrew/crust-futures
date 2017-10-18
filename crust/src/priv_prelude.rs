@@ -1,3 +1,6 @@
+//! This module re-exports a bunch of common imports so they can be glob-imported into other
+//! modules using `use priv_prelude::*`
+
 pub use std::{io, mem, fmt};
 pub use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
 pub use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};

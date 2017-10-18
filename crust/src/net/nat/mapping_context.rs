@@ -24,7 +24,9 @@ use tokio_igd::{self, Gateway};
 use util;
 use priv_prelude::*;
 
-/// Keeps track of information about external mapping servers
+/// Keeps track of information useful for creating mapped sockets. eg. What networking interfaces
+/// does the machine we're running on have? Is there a UPnP router we can talk to? What are some
+/// addresses of external STUN servers we can use?
 #[derive(Debug)]
 pub struct MappingContext {
     our_ifv4s: Vec<Ifv4>,

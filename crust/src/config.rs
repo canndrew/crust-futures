@@ -76,12 +76,15 @@ impl ConfigFile {
         ConfigFile::open_path(Self::get_default_file_name()?)
     }
 
+    /// Get the file name of the default config file.
     pub fn get_default_file_name() -> Result<PathBuf, CrustError> {
         let mut name = config_file_handler::exe_file_stem()?;
         name.push(".crust.config");
         Ok(name.into())
     }
 
+    /// Create a new, temporary config file and return a handle to it. This is mainly useful for
+    /// tests.
     pub fn new_temporary() -> Result<ConfigFile, CrustError> {
         let file_name = format!("{:016x}.crust.config", rand::random::<u64>());
         let mut path = env::temp_dir();
@@ -129,6 +132,8 @@ impl ConfigFile {
         }
     }
 
+    /// Check whether an IP address is whitelisted. If whitelisting is disabled then all IPs are
+    /// treated as being whitelisted.
     pub fn is_peer_whitelisted(&self, ip: IpAddr, peer_kind: CrustUser) -> bool {
         let res = {
             let config = self.read();
@@ -149,6 +154,8 @@ impl ConfigFile {
         res
     }
 
+    /// Attach an observer to this config. Observers will be notified via the returned channel
+    /// whenever a change is made to the config.
     pub fn observe(&self) -> UnboundedReceiver<()> {
         let (tx, rx) = mpsc::unbounded();
         let mut inner = unwrap!(self.inner.write());

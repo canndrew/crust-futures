@@ -5,6 +5,7 @@ use priv_prelude::*;
 
 pub const SERVICE_DISCOVERY_DEFAULT_PORT: u16 = 5484;
 
+/// Advertises our current set of connectable listening addresses on the local network.
 pub struct ServiceDiscovery {
     port: u16,
     drop_tx: DropNotify,

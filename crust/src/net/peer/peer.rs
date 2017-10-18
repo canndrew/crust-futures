@@ -17,6 +17,13 @@ pub const INACTIVITY_TIMEOUT_MS: u64 = 900_000;
 const HEARTBEAT_PERIOD_MS: u64 = 300_000;
 
 /// A connection to a remote peer.
+// This wraps a `Socket` and uses it to send `PeerMessage`s to peers. It also adds a heartbeat to
+// keep the connection alive and detect when peers have disconnected.
+//
+// TODO: One problem with the implementation is that it takes serialized messages from the upper
+// layer and then re-serialises them for no reason. This behaviour is inherited from the old crust
+// (where `Peer` and `Socket` were the same type) but should really be fixed. The heartbeat could
+// simply be encoded as a zero-byte message.
 pub struct Peer<UID: Uid> {
     their_uid: UID,
     kind: CrustUser,

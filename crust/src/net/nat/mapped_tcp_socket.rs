@@ -23,7 +23,9 @@ quick_error! {
     }
 }
 
-/// Create a new, mapped tcp socket.
+/// Returns a TCP socket and a set of possible external addresses of the socket. For instance, if
+/// we're behind a NAT then this will use UPnP and a pseudo-STUN protocol to try and find global IP
+/// address+ports that can be used by other peers to connect to this socket.
 pub fn mapped_tcp_socket<UID: Uid>(
     handle: &Handle,
     mc: &MappingContext,

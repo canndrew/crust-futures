@@ -36,6 +36,20 @@ quick_error! {
     }
 }
 
+/// A `Socket` wraps an underlying transport protocol (eg. TCP) and acts a `Sink`/`Stream` for
+/// sending/receiving messages of type `M`.
+///
+/// An important thing to understand about `Socket`s is that they are *infinitely buffered*. You
+/// can just keep pumping more and more data into them without blocking the writing task even if
+/// the underlying transport can't keep up. Eventually, once the latency builds up too much (ie.
+/// the messages it's writing are more than MAX_MSG_AGE_SECS old) then it will drop its entire
+/// outgoing buffer. This may sound broken in several ways, but it's behaviour that MaidSafe's
+/// routing layer currently expects.
+///
+/// Another thing is that messages can be sent with a `Priority`. Higher (lower-numbered)
+/// priorities will always be sent first. Highest-priority messages, those with priority below
+/// MSG_DROP_PRIORITY, will never be dropped no matter how much the latency on the socket builds up
+/// or how large the buffer grows 😬
 pub struct Socket<M> {
     inner: Option<Inner>,
     _ph: PhantomData<M>,
@@ -61,11 +75,14 @@ struct SocketTask {
 }
 
 impl<M: 'static> Socket<M> {
+    /// Wraps a `TcpStream` and turns it into a `Socket`.
     pub fn wrap_tcp(handle: &Handle, stream: TcpStream, peer_addr: SocketAddr) -> Socket<M> {
         const MAX_HEADER_SIZE: usize = 8;
-        let framed = length_delimited::Builder::new()
+        let framed = {
+            length_delimited::Builder::new()
             .max_frame_length(MAX_PAYLOAD_SIZE + MAX_HEADER_SIZE)
-            .new_framed(stream);
+            .new_framed(stream)
+        };
         let (stream_tx, stream_rx) = framed.split();
         let (write_tx, write_rx) = mpsc::unbounded();
         let task = SocketTask {
@@ -92,6 +109,7 @@ impl<M: 'static> Socket<M> {
         }
     }
 
+    /// Get the address of the remote peer (if the socket is still active).
     pub fn peer_addr(&self) -> Result<SocketAddr, SocketError> {
         match self.inner {
             Some(ref inner) => Ok(inner.peer_addr),
@@ -99,6 +117,8 @@ impl<M: 'static> Socket<M> {
         }
     }
 
+    /// Consume this socket and return it as a socket with a different messages type. Any messages
+    /// of the old type that are in the outgoing buffer will still be sent.
     pub fn change_message_type<N>(self) -> Socket<N> {
         Socket {
             inner: self.inner,

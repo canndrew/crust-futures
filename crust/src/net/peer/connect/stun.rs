@@ -31,6 +31,8 @@ quick_error! {
     }
 }
 
+/// Perform a "stun" (not actually stun, but our own stun-like protocol) to determine our remote
+/// address.
 pub fn stun<UID: Uid>(
     handle: &Handle,
     peer_addr: &SocketAddr,

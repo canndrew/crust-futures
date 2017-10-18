@@ -1,3 +1,6 @@
+//! This module is a backwards-compatibility layer which implements the old message-passing-based
+//! API on top of the new futures API.
+
 use maidsafe_utilities;
 
 pub use self::event::{Event, ConnectionInfoResult};

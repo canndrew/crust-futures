@@ -1,3 +1,5 @@
+//! Utilities for use in tests. This module is only available when running with cfg(test)
+
 use priv_prelude::*;
 
 use rand::{self, Rng};

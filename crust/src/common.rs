@@ -11,6 +11,10 @@ pub enum CrustUser {
     Client,
 }
 
+/// The size of a `NameHash`.
 pub const HASH_SIZE: usize = 32;
+
+/// Every network that crust can connect to has its own id, identified by a `NameHash`. When
+/// connecting to a peer, we check that they are using the same `NameHash` as us.
 pub type NameHash = [u8; HASH_SIZE];
 
