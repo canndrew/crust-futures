@@ -67,7 +67,7 @@ pub fn mapped_tcp_socket<UID: Uid>(
 
         for peer_stun in mc.peer_stuns().into_iter().cloned() {
             let future = {
-                net::peer::stun::<UID>(handle, &peer_stun)
+                net::peer::stun::<UID>(handle, &addr, &peer_stun)
                 .map_err(move |e| MappedTcpSocketError::Stun(e, peer_stun))
                 .into_boxed()
             };

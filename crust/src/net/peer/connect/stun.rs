@@ -1,4 +1,5 @@
 use priv_prelude::*;
+use util;
 use net::peer::connect::HandshakeMessage;
 
 quick_error! {
@@ -28,6 +29,11 @@ quick_error! {
         TimedOut {
             description("operation timed out")
         }
+        CreateReusableSocket(e: io::Error) {
+            description("error creating reusably-bound tcp socket")
+            display("error creating reusably-bound tcp socket: {}", e)
+            cause(e)
+        }
     }
 }
 
@@ -35,13 +41,22 @@ quick_error! {
 /// address.
 pub fn stun<UID: Uid>(
     handle: &Handle,
+    local_addr: &SocketAddr,
     peer_addr: &SocketAddr,
 ) -> BoxFuture<SocketAddr, StunError> {
     let handle0 = handle.clone();
+    let handle1 = handle.clone();
     let peer_addr = *peer_addr;
-    TcpStream::connect(&peer_addr, &handle)
-    .map_err(|e| StunError::Connect(e))
-    .map(move |stream| Socket::<HandshakeMessage<UID>>::wrap_tcp(&handle0, stream, peer_addr))
+    future::result({
+        util::new_reusably_bound_tcp_socket(local_addr)
+        .and_then(|socket| socket.to_tcp_stream())
+        .map_err(StunError::CreateReusableSocket)
+    })
+    .and_then(move |socket| {
+        TcpStream::connect_stream(socket, &peer_addr, &handle0)
+        .map_err(StunError::Connect)
+    })
+    .map(move |stream| Socket::<HandshakeMessage<UID>>::wrap_tcp(&handle1, stream, peer_addr))
     .and_then(|socket| {
         socket
         .send((0, HandshakeMessage::EchoAddrReq))
