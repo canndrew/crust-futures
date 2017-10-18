@@ -25,10 +25,10 @@ env_logger = "*"
 tiny-keccak = "1.3"
 notify = "*"
 maplit = "*"
+net-literals = "0.1"
 
 future-utils = { path = "../future-utils" }
 tokio-utils = { path = "../tokio-utils" }
-net-macros = { path = "../net-macros" }
 tokio-igd = { path = "../tokio-igd" }
 service_discovery = { path = "../service_discovery" }
 

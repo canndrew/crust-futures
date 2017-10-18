@@ -19,7 +19,7 @@ extern crate future_utils;
 extern crate tokio_utils;
 extern crate net2;
 #[macro_use]
-extern crate net_macros;
+extern crate net_literals;
 extern crate get_if_addrs;
 extern crate tokio_igd;
 #[macro_use]

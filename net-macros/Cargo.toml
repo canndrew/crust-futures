@@ -1,9 +1,0 @@
-[package]
-name = "net-macros"
-version = "0.1.0"
-authors = ["Andrew Cann <shum@canndrew.org>"]
-
-[dependencies]
-proc-macro-hack = "0.3"
-net-macros-impl = { path = "../net-macros-impl" }
-
