@@ -43,7 +43,7 @@ mod config;
 mod common;
 pub mod compat;
 mod service;
-mod util;
+pub mod util;
 mod net;
 
 mod priv_prelude;
@@ -51,6 +51,6 @@ mod priv_prelude;
 #[cfg(test)]
 mod tests;
 
-//pub use config::{Config};
+pub use config::{ConfigFile};
 pub use service::Service;
 
