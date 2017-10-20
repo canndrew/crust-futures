@@ -44,7 +44,7 @@ mod common;
 pub mod compat;
 mod service;
 pub mod util;
-mod net;
+pub mod net;
 
 mod priv_prelude;
 
