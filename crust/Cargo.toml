@@ -33,6 +33,6 @@ tokio-igd = { path = "../tokio-igd" }
 service_discovery = { path = "../service_discovery" }
 
 [[example]]
-name = "basic"
-path = "examples/basic.rs"
+name = "connect"
+path = "examples/connect.rs"
 
