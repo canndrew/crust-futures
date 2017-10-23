@@ -54,4 +54,5 @@ mod tests;
 pub use config::{ConfigFile};
 pub use service::Service;
 pub use net::{PrivConnectionInfo, PubConnectionInfo};
+pub use net::Uid;
 
