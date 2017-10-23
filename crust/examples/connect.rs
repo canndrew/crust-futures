@@ -64,19 +64,24 @@ fn main() {
     let service_id = rand::thread_rng().gen::<PeerId>();
     println!("Service id: {}", service_id);
 
-    let config = ConfigFile::open_path(PathBuf::from("sample.config"))
-        .expect("Failed to read crust config file: sample.config");
+    let config = unwrap!(
+        ConfigFile::open_path(PathBuf::from("sample.config")),
+        "Failed to read crust config file: sample.config",
+    );
     let make_service = Service::with_config(&event_loop.handle(), config, service_id);
-    let service = event_loop.run(make_service).expect(
+    let service = unwrap!(
+        event_loop.run(make_service),
         "Failed to create Service object",
     );
 
-    let listener = event_loop.run(service.start_listener()).expect(
+    let listener = unwrap!(
+        event_loop.run(service.start_listener()),
         "Failed to start listening to peers",
     );
     println!("Listening on {}", listener.addr());
 
-    let our_conn_info = event_loop.run(service.prepare_connection_info()).expect(
+    let our_conn_info = unwrap!(
+        event_loop.run(service.prepare_connection_info()),
         "Failed to prepare connection info",
     );
     let pub_conn_info = our_conn_info.pub_connection_info();
@@ -89,9 +94,10 @@ fn main() {
     let their_info = readln();
     let their_info: PubConnectionInfo<PeerId> = unwrap!(serde_json::from_str(&their_info));
 
-    let peer = event_loop
-        .run(service.connect(our_conn_info, their_info))
-        .expect("Failed to connect to given peer");
+    let peer = unwrap!(
+        event_loop.run(service.connect(our_conn_info, their_info)),
+        "Failed to connect to given peer",
+    );
     println!("Connected to peer: {}", peer.uid());
 
     // Run event loop forever.
