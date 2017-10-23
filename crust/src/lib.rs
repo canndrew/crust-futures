@@ -51,6 +51,8 @@ mod priv_prelude;
 #[cfg(test)]
 mod tests;
 
-//pub use config::{Config};
+pub use config::{ConfigFile};
 pub use service::Service;
+pub use net::{PrivConnectionInfo, PubConnectionInfo};
+pub use net::Uid;
 
