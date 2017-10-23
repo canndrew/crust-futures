@@ -36,7 +36,7 @@ use std::path::PathBuf;
 use futures::future::empty;
 use tokio_core::reactor::Core;
 
-use crust_futures::{Service, util, ConfigFile, net};
+use crust_futures::{Service, util, ConfigFile, PubConnectionInfo};
 
 fn main() {
     let mut event_loop = unwrap!(Core::new());
@@ -66,7 +66,7 @@ fn main() {
 
     println!("Enter remote peer public connection info:");
     let their_info = readln();
-    let their_info: net::PubConnectionInfo<util::UniqueId> =
+    let their_info: PubConnectionInfo<util::UniqueId> =
         unwrap!(serde_json::from_str(&their_info));
 
     let peer = event_loop

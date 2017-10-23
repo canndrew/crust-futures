@@ -44,7 +44,7 @@ mod common;
 pub mod compat;
 mod service;
 pub mod util;
-pub mod net;
+mod net;
 
 mod priv_prelude;
 
@@ -53,4 +53,5 @@ mod tests;
 
 pub use config::{ConfigFile};
 pub use service::Service;
+pub use net::{PrivConnectionInfo, PubConnectionInfo};
 
