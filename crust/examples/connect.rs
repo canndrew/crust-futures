@@ -45,17 +45,10 @@ use rand::Rng;
 
 use crust_futures::{Service, ConfigFile, PubConnectionInfo, Uid};
 
-
 // Some peer ID boilerplate.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Rand)]
 struct PeerId(u64);
-
-impl PeerId {
-    pub fn random() -> PeerId {
-        rand::thread_rng().gen()
-    }
-}
 
 impl Uid for PeerId {}
 
@@ -68,7 +61,7 @@ impl fmt::Display for PeerId {
 
 fn main() {
     let mut event_loop = unwrap!(Core::new());
-    let service_id = PeerId::random();
+    let service_id = rand::thread_rng().gen::<PeerId>();
     println!("Service id: {}", service_id);
 
     let config = ConfigFile::open_path(PathBuf::from("sample.config"))
