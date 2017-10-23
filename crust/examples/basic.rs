@@ -1,3 +1,27 @@
+//! This example demonstrates how to make a P2P connection using `crust`.
+//! We are using `crust::Service` to listen for incoming connections
+//! and to establish connection to remote peer.
+//!
+//! In a nutshell connetion looks like this:
+//!
+//! 1. start listening for incoming connections
+//! 2. prepare connection information: public and private
+//! 3. exchange public information
+//! 4. connect
+//!
+//! Run two instances of this sample: preferably on separate computers but
+//! localhost is fine too.
+//! When the sample starts it prints generated public information which
+//! is represented as JSON object.
+//! Copy this object from first to second peer and hit ENTER.
+//! Do the same with the second peer: copy it's public information JSON
+//! to first peer and hit ENTER.
+//! On both peers you should see something like:
+//! ```
+//! Connected to peer: 4a755684f72fe63fba86725b80d42d69ed649392
+//! ```
+//! That's it, it means we successfully did a peer-to-peer connection.
+
 #[macro_use]
 extern crate unwrap;
 extern crate tokio_core;
