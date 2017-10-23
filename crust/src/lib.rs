@@ -43,7 +43,7 @@ mod config;
 mod common;
 pub mod compat;
 mod service;
-pub mod util;
+mod util;
 mod net;
 
 mod priv_prelude;

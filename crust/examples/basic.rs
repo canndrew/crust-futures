@@ -26,21 +26,49 @@
 extern crate unwrap;
 extern crate tokio_core;
 extern crate futures;
+#[macro_use]
+extern crate serde_derive;
+extern crate serde;
 extern crate serde_json;
+#[macro_use]
+extern crate rand_derive;
+extern crate rand;
 
 extern crate crust_futures;
 
-use std::io;
+use std::{io, fmt};
 use std::path::PathBuf;
 
 use futures::future::empty;
 use tokio_core::reactor::Core;
+use rand::Rng;
 
-use crust_futures::{Service, util, ConfigFile, PubConnectionInfo};
+use crust_futures::{Service, ConfigFile, PubConnectionInfo, Uid};
+
+
+// Some peer ID boilerplate.
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Rand)]
+struct PeerId(u64);
+
+impl PeerId {
+    pub fn random() -> PeerId {
+        rand::thread_rng().gen()
+    }
+}
+
+impl Uid for PeerId {}
+
+impl fmt::Display for PeerId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let PeerId(ref id) = *self;
+        write!(f, "{:x}", id)
+    }
+}
 
 fn main() {
     let mut event_loop = unwrap!(Core::new());
-    let service_id = util::random_id();
+    let service_id = PeerId::random();
     println!("Service id: {}", service_id);
 
     let config = ConfigFile::open_path(PathBuf::from("sample.config"))
@@ -66,8 +94,7 @@ fn main() {
 
     println!("Enter remote peer public connection info:");
     let their_info = readln();
-    let their_info: PubConnectionInfo<util::UniqueId> =
-        unwrap!(serde_json::from_str(&their_info));
+    let their_info: PubConnectionInfo<PeerId> = unwrap!(serde_json::from_str(&their_info));
 
     let peer = event_loop
         .run(service.connect(our_conn_info, their_info))
